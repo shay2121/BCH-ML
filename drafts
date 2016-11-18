@@ -1,0 +1,23 @@
+import codes
+import numpy as np
+import csv
+
+globalK=3
+globalN=7
+globalM=globalN-globalK
+globalSnr=3
+numOfWords=100000
+
+def readData():
+  fname='Data/bch' + str(globalK) + 'x' + str(globalN) + '.csv'
+  t = np.genfromtxt(fname, delimiter=',')
+  return t
+
+
+def main():
+#    codes.generateData(globalK,globalN,globalSnr,numOfWords)
+    r=readData()
+    print("end")
+
+
+if __name__ == "__main__": main()
