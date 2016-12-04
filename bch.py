@@ -15,28 +15,30 @@ globalN=7
 globalM=globalN-globalK
 globalSnr=3
 globalInd=2
-numOfWords=100000
+numOfWords=1000
+BCH_TRAINING= 'BCH ' + str(globalK) + 'x' + str(globalN) + 'Train.csv'
+BCH_TEST= 'BCH' + str(globalK) + 'x' + str(globalN) + 'Test.csv'
 
 
-def genData():
-  codes.generateData(globalK, globalN, globalSnr, numOfWords,globalInd)
+def genData(fname):
+  codes.generateData(globalK, globalN, globalSnr, numOfWords,globalInd,fname)
  # fname='Data/bch' + str(globalK) + 'x' + str(globalN) + '.csv'
   #t = np.genfromtxt(fname, delimiter=',')
   #return t
 
 
 def main():
+
+
 #    codes.generateData(globalK,globalN,globalSnr,numOfWords)
-#    r=genData()
+    genData(BCH_TRAINING)
+    genData(BCH_TEST)
     print("start train...")
 
 
 if __name__ == "__main__": main()
 
 
-# Data sets
-BCH_TRAINING= 'BCH3x7train.csv'
-BCH_TEST = 'BCH3x7test.csv'
 
 # Load datasets.
 
@@ -57,7 +59,7 @@ classifier = tf.contrib.learn.DNNClassifier(feature_columns=feature_columns,
 # Fit model.
 classifier.fit(x=training_set.data,
                y=training_set.target,
-               steps=2000)
+               steps=10)
 
 # Evaluate accuracy.
 accuracy_score = classifier.evaluate(x=test_set.data,
