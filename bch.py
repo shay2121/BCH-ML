@@ -5,6 +5,9 @@ from __future__ import print_function
 
 import codes
 import csv
+import glob, os
+import shutil
+
 
 
 import tensorflow as tf
@@ -15,24 +18,29 @@ globalN=7
 globalM=globalN-globalK
 globalSnr=3
 globalInd=2
-numOfWords=1000
-BCH_TRAINING= 'BCH ' + str(globalK) + 'x' + str(globalN) + 'Train.csv'
-BCH_TEST= 'BCH' + str(globalK) + 'x' + str(globalN) + 'Test.csv'
+numOfWords=100000
+logFolder="/tmp/bch_model"
+BCH_TRAINING= "BCH" + str(globalK) + "x" + str(globalN) + "Training.csv"
+BCH_TEST= "BCH" + str(globalK) + "x" + str(globalN) + "test.csv"
 
 
-def genData(fname):
-  codes.generateData(globalK, globalN, globalSnr, numOfWords,globalInd,fname)
+def genData(fname1,fname2):
+  codes.generateData(globalK, globalN, globalSnr, numOfWords,globalInd,fname1,fname2)
  # fname='Data/bch' + str(globalK) + 'x' + str(globalN) + '.csv'
   #t = np.genfromtxt(fname, delimiter=',')
   #return t
 
 
 def main():
+    folder='/'+logFolder+'/*'
+
+    for root, dirs, files in os.walk(folder):
+        for f in files:
+            os.unlink(os.path.join(root, f))
+        for d in dirs:
+            shutil.rmtree(os.path.join(root, d))
 
 
-#    codes.generateData(globalK,globalN,globalSnr,numOfWords)
-    genData(BCH_TRAINING)
-    genData(BCH_TEST)
     print("start train...")
 
 
@@ -41,20 +49,27 @@ if __name__ == "__main__": main()
 
 
 # Load datasets.
+genData(BCH_TRAINING,BCH_TEST)
 
-training_set = tf.contrib.learn.datasets.base.load_csv(filename=BCH_TRAINING, target_dtype=np.int)
-test_set = tf.contrib.learn.datasets.base.load_csv(filename=BCH_TEST, target_dtype=np.int)
+training_set = tf.contrib.learn.datasets.base.load_csv(filename=BCH_TRAINING, target_column=globalN,target_dtype=np.int)
+test_set =  tf.contrib.learn.datasets.base.load_csv(filename=BCH_TEST, target_dtype=np.int)
+
+
+
+
+
 
 
 
 # Specify that all features have real-value data
-feature_columns = [tf.contrib.layers.real_valued_column("", dimension=7)]
+feature_columns = [tf.contrib.layers.real_valued_column("", dimension=globalN)]
 
 # Build 3 layer DNN with 10, 20, 10 units respectively.
 classifier = tf.contrib.learn.DNNClassifier(feature_columns=feature_columns,
-                                            hidden_units=[10, 20, 10],
+                                            hidden_units=[10,20,10],
                                             n_classes=3,
-                                            model_dir="/tmp/bch_model")
+                                            model_dir=logFolder)
+
 
 # Fit model.
 classifier.fit(x=training_set.data,
@@ -63,7 +78,7 @@ classifier.fit(x=training_set.data,
 
 # Evaluate accuracy.
 accuracy_score = classifier.evaluate(x=test_set.data,
-                                     y=test_set.target)["accuracy"]
+                                   y=test_set.target)["accuracy"]
 print('Accuracy: {0:f}'.format(accuracy_score))
 
 print("game on")
