@@ -13,12 +13,12 @@ import shutil
 import tensorflow as tf
 import numpy as np
 
-globalK=3
-globalN=7
+globalK=85
+globalN= 127
 globalM=globalN-globalK
-globalSnr=3
+globalSnr=30
 globalInd=2
-numOfWords=100000
+numOfWords=1000
 logFolder="/tmp/bch_model"
 BCH_TRAINING= "BCH" + str(globalK) + "x" + str(globalN) + "Training.csv"
 BCH_TEST= "BCH" + str(globalK) + "x" + str(globalN) + "test.csv"
@@ -32,7 +32,7 @@ def genData(fname1,fname2):
 
 
 def main():
-    folder='/'+logFolder+'/*'
+    folder='/'+logFolder
 
     for root, dirs, files in os.walk(folder):
         for f in files:
