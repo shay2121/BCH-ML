@@ -1,0 +1,1852 @@
+  /* $Id: minimum.cpp 1561 2010-06-13 13:08:03Z stefan $ */
+// Copyright (C) 2002, International Business Machines
+// Corporation and others.  All Rights Reserved.
+
+//should write generic form. each function is an Update3 func.
+//seeks for the place in the file and writes its operation with the new data.
+
+#include "NSA.hpp"
+
+using namespace std;
+double solutions[MAX_ITER][N];
+double solution[bigN];
+double original[N];
+double test[N];
+double lastSolution[N];
+bool endOfSimulation=0;
+int numOfIterations=1000;
+double Exit_Code=500.0;
+int XML[N];
+int Permutations[M][N];
+int globalP[M][N];
+
+IPD::IPD(ifstream &fProblem)
+	{
+		int dim,i,j,Tdim,len=1000;
+		int logi=log10(1.0*globalN)/log10(2.0);
+		ifstream PTP(politopeFile.c_str());		
+		
+		if(mode!=4)
+		{
+			dim=P.Init(fProblem);
+			CostVector.Init(P.rbase,dim,len,globalSNR);
+			for(i=0;i<bigN;i++)
+			{
+				LT1[i]=false;
+				for(j=0;j<medN;j++)
+				{
+					XPT[i][j]=0;
+				}
+			}
+			return;
+		}
+		frozenPerm();
+		alter(pB);
+		Tdim=globalN*(1+logi);
+		SHIFT=Tdim-globalN;
+		cga1Active=false;
+		dim=P.Init(fProblem);
+		CostVector.Init(P.rbase,dim,len,globalSNR);
+		cga1Constraints=0;
+		flagRegConstraints=false;
+		firstPT=true;
+		globalVars=0;
+		globalZs=0;
+		for(i=0;i<bigN;i++)
+		{
+			LT1[i]=false;
+			for(j=0;j<medN;j++)
+			{
+				XPT[i][j]=0;
+			}
+		}
+		for(i=0;i<N;i++)
+			usedConstraints[i]=false;
+		for(i=0;i<globalN;i++)
+		{
+			for(j=0;j<globalN;j++)
+			{
+				Z[i][j]=false;
+			}
+		}
+		rowNum=0;
+		//readFile(PTP,XPT,SHIFT+globalN,SHIFT);
+		if(mode==4)
+		{
+			genXPT();
+			for(i=0;i<SHIFT;i++)
+			{
+				addPolitopeConstraint(XPT[i],0,1,true);
+			}
+		}
+	}
+
+	
+	void IPD::Build(int flag)
+	{
+		string str=pwd+"proxy.txt";
+		if(glpkLoaded)
+		{
+			IPD::glpkBuild();
+			return;
+		}
+		outFile.open (str.c_str());
+		outFile<<"NAME          Proxy";
+		outFile.setf( std::ios::fixed, std:: ios::floatfield );
+		outFile.precision(8);
+		//P.Print();
+		writeRows();
+		writeColumns();
+		writeRHS();
+		writeVariablesLimitsETerminate();
+		
+	}
+
+	void IPD::glpkBuild()
+	{
+		/* declare variables */
+	  int i,j,ind,ia[IA], ja[IA],dimA=(P.J)*(P.I);
+	  double ar[IA], z, x1, x2;
+	  ostringstream str;
+	  /* create problem */
+	  glp_delete_prob(P1);
+	  P1=glp_create_prob();
+	  glp_set_prob_name(P1, "GLPK");
+	  glp_set_obj_dir(P1, GLP_MAX);
+	  /* fill problem */
+	  glp_add_rows(P1, P.I);
+	  for(i=0;i<P.I;i++)
+	  {
+		 str.str("");str.clear();
+		 str<<"R"<<i;
+		 glp_set_row_name(P1, i+1,  str.str().c_str());
+		 switch (P.C[i])
+		 {
+			case 0: {glp_set_row_bnds(P1, i+1, GLP_UP, 0.0, P.B[i]);break;}
+			case 1: {glp_set_row_bnds(P1, i+1, GLP_FX, P.B[i], P.B[i]);break;}
+			case 2: {glp_set_row_bnds(P1, i+1, GLP_LO,P.B[i] , 0.0);break;}
+		 }		 
+	  }
+	  glp_add_cols(P1, P.J);
+	  for(j=0;j<globalN;j++) //Xs
+	  {
+		 str.str("");str.clear();
+		 str<<"X"<<j;
+		 glp_set_col_name(P1, j+1, str.str().c_str());
+		 glp_set_col_bnds(P1, j+1, GLP_DB,0,1);
+		 
+	  }
+	  //glp_write_lp(P1, NULL, "C:\\MyProj\\CFG5\\proxy1.txt");
+	  for(j=globalN;j<P.J;j++) //Zs
+	  {
+	     str.str("");str.clear();
+		 str<<"Z"<<(j-globalN);
+		 glp_set_col_name(P1, j+1, str.str().c_str());
+		 glp_set_col_bnds(P1, j+1, GLP_LO,0,DBL_MAX);
+		 //glp_write_lp(P1, NULL, "C:\\MyProj\\CFG5\\proxy1.txt");
+	  }
+	  for(j=0;j<globalN;j++)//target function
+	  {
+		 glp_set_obj_coef(P1, j+1, (-1)*CostVector.A[j]);	  
+	  }
+	  for(i=0;i<P.I;i++)
+		  for(j=0;j<P.J;j++)
+		  {
+			  ind=(P.J)*i+j+1;
+			  ia[ind]=i+1; ja[ind]=j+1; ar[ind]=P.A[i][j];
+		  }
+		  /*
+	  ia[1] = 1, ja[1] = 1, ar[1] = 1.0; // a[1,1] = 1 
+	  ia[2] = 1, ja[2] = 2, ar[2] = 2.0; // a[1,2] = 2 
+	  ia[3] = 2, ja[3] = 1, ar[3] = 3.0; // a[2,1] = 3 
+	  ia[4] = 2, ja[4] = 2, ar[4] = 1.0; // a[2,2] = 1 
+	  */
+	  glp_load_matrix(P1, dimA, ia, ja, ar);
+	  //glp_write_lp(P1, NULL, "C:\\MyProj\\CFG5\\proxy1.txt");
+	  /* solve problem */
+	}
+
+	int IPD::Solve()
+	{
+		int i;
+		double localSol[N];
+		//IPD::clpSolve();
+		//for(i=0;i<globalN+globalM;i++)
+		//	localSol[i]=solution[i];
+		//IPD::glpkSolve();
+		if (globalDecoder==0) return IPD::clpSolve();
+		else return glpkSolve();
+	}
+	int IPD::clpSolve()
+	{
+		int ans=1;
+		string str=pwd+"proxy.txt";
+		bool infeasible1=false,infeasible2=false;
+		ClpSimplex  model;
+		int status;
+		model;
+		globalSolve++;
+		globalLPI++;
+		status = model.readMps(str.c_str());
+		if (!status) {
+         model.primal();
+		 /*
+		 int numberRows = model.numberRows();
+		double * rowPrimal = model.primalRowSolution();
+		double * rowDual = model.dualRowSolution();
+		  int iRow;
+
+		for (iRow=0;iRow<numberRows;iRow++) 	
+		//printf("Row %d, primal %g, dual %g\n",iRow,
+		rowPrimal[iRow],rowDual[iRow]);
+	*/
+	  int numberColumns = model.numberColumns();
+	  double * columnPrimal = model.primalColumnSolution();
+	  infeasible1=!(model.infeasibilityRay()==NULL);
+	  infeasible2=model.isProvenDualInfeasible();
+	  double x;
+	  int n;
+	 // double * columnDual = model.dualColumnSolution();
+
+	  int iColumn;
+	  for(iColumn=0;iColumn<numberColumns;iColumn++)
+		  lastSolution[iColumn]=solution[iColumn];
+	  for (iColumn=0;iColumn<numberColumns;iColumn++) 	
+	  {
+		  x=columnPrimal[iColumn]; n= (int) x;
+		  if (fabs(x-n)<EPS) 
+			  solution[iColumn]=n;
+		  else if (fabs(x-(n+1))<EPS) 
+			  solution[iColumn]=n+1;
+		  else solution[iColumn]=x; 
+		 // //printf("Column %d, primal %g\n",iColumn,
+		  //solution[iColumn]);
+	  }
+	 // updateCV();
+
+	  if(mode==4)return integralPolar();
+	  if(integral()) printSol();
+	  return integral();
+	  
+		}
+
+		//printSolution();
+		updateCV();
+		return ans;
+	}
+
+	int IPD::glpkSolve()
+	{
+		int ansGLPK,ans=1;
+		ofstream logFile;
+		logFile.open ("C:\\MyProj\\glpkLog.txt");
+		string str=pwd+"proxy.txt";
+		bool infeasible1=false,infeasible2=false;
+		double x;
+		int n;
+		
+		// double * columnDual = model.dualColumnSolution();
+		int iColumn;
+		//ClpSimplex  model;
+		int status;
+        logFile <<-4<<endl;
+		
+		if(glpkLoaded==0)
+		{
+			ansGLPK=glp_read_mps(P1,GLP_MPS_FILE,NULL,str.c_str());
+			//glp_write_lp(P1, NULL, "C:\\MyProj\\CFG5\\proxy2Good.txt");
+		}
+		//ansGLPK=glp_write_mps(P1,GLP_MPS_FILE,NULL,str.c_str());
+		logFile<<-3<<endl;
+		int numberColumns=glp_get_num_cols(P1);
+		logFile<<-2<<endl;
+		//glp_adv_basis(P1,0);
+		glp_simplex(P1,NULL);
+		logFile<<-1<<endl;
+		globalSolve++;
+		globalLPI++;
+		 /*
+		 int numberRows = model.numberRows();
+		double * rowPrimal = model.primalRowSolution();
+		double * rowDual = model.dualRowSolution();
+		  int iRow;
+
+		for (iRow=0;iRow<numberRows;iRow++) 	
+		//printf("Row %d, primal %g, dual %g\n",iRow,
+		rowPrimal[iRow],rowDual[iRow]);
+	*/
+	  for(iColumn=0;iColumn<numberColumns;iColumn++)
+		  lastSolution[iColumn]=solution[iColumn];
+	  for (iColumn=0;iColumn<numberColumns;iColumn++) 	
+	  {
+		  x=glp_get_col_prim(P1,iColumn+1); n= (int) x;
+		  logFile<<iColumn<<endl;
+		  if (fabs(x-n)<EPS) 
+			  solution[iColumn]=n;
+		  else if (fabs(x-(n+1))<EPS) 
+			  solution[iColumn]=n+1;
+		  else solution[iColumn]=x; 
+		 // //printf("Column %d, primal %g\n",iColumn,
+		  //solution[iColumn]);
+	  }
+	 // updateCV();
+
+	  if(mode==4)return integralPolar();
+	  if(integral()) printSol();
+	 // glp_erase_prob(P1);
+	  return integral();
+
+	//printSolution();
+	updateCV();
+	return ans;
+	}
+	void IPD::updatePerms()
+	{
+		int i,j;
+		for(i=0;i<globalN-globalK;i++)
+			for(j=0;j<globalN;j++)
+				P.A[i][j]=globalP[i][j];
+	}
+
+	
+
+	bool IPD::sameSolution()
+	{
+		int j;
+		for(j=0;j<P.J;j++)
+		{
+			if(solution[j]!=lastSolution[j])return false;
+		}
+		return true;
+	}
+//HaddConst. does not work..
+	int IPD::polarFindCGA1(int ind)
+	{
+		int j,i;
+		int cnt=0;
+		for(j=0;j<globalN;j++)
+			X[j]=0;
+		for(i=0;i<globalM;i++)
+		{
+			//if(!(EVEN[i]%2)) continue;
+			if(solution[ind+SHIFT]>0.5)
+			{
+				for(j=0;j<globalN;j++)
+				{
+					if (P.A[i][j]==1) X[j]=-1;
+					if (j==ind) X[j]=1;
+				}
+				comB[cga1Constraints]=0;
+				comC[cga1Constraints]=0;
+			}
+			else
+			{
+				for(j=0;j<globalN;j++)
+				{
+					if (P.A[i][j]==1) X[j]=1;
+					if (j==ind) X[j]=-1;
+				}
+				comB[cga1Constraints]=EVEN[i]-1;
+				comC[cga1Constraints]=0;
+			}
+
+		}	
+		return 1;
+	}
+
+	void IPD::polarCGA1(int ind)
+	{
+		int x,i;
+		for(i=0;i<globalM;i++)
+		{
+			if(P.A[i][ind]==1) 
+			{
+				polarFindCGA1(ind);
+				break;
+			}
+		}
+		syncCGA1();
+		
+	}
+
+
+
+
+
+	void IPD::CGA1()
+	{
+		int i,j,x,b;
+		for (i=0;i<P.rI;i++)
+		{
+			for(j=0;j<M;j++) X[j]=0;
+			x= (int) solution[P.base+i];
+			if(solution[P.base+i]-x<EPS) continue;
+			b=findCGA1(i);
+			P.Update3(X,b,0);
+			printSolution();
+			P.Print();
+		}
+	}
+	
+
+	int IPD::findCGA1(int i)
+	{
+		int j;
+		int cnt=0;
+		for(j=0;j<P.base;j++)
+		{
+			if(P.A[i][j]==0) continue; 
+			if (solution[j]==1.0) 
+			{
+				X[j]=1;
+				cnt++;
+			}
+			else
+				X[j]=-1;
+		}
+		return cnt-1;
+	}
+
+	bool IPD::ConstructH()
+	{
+		int l=0,j;
+		bool ans,corrected[N]={false}; //=the indices that have been column zeroized up untill now
+		int n=P.base,m=P.Zs;
+		P.clone();
+		printSolution();
+		P.Print(1);
+		for (j=0;j<n;j++)
+		{
+			if(solution[j]!=0 && solution[j]!=1)
+				if(l<m)
+				{
+					if(!rowOperation(l,j,n,m,corrected))
+					{
+						printSolution();
+						P.Print(1);
+						return false;
+						ans=advancedConstructH(n,m);
+						//solution[j]=round(solution[j]);
+						printSolution();
+						P.Print(1);
+						return ans;
+					}
+					corrected[j]=true;
+					l++;
+				}
+			if (l>m) return true;
+		}
+		printSolution();
+		P.Print(1);
+		//P.Print(2);
+	}	
+	int findMin(double A[N],int n)
+	{
+		double Min=10000;
+		int i,res=-1;
+		for(i=0;i<n;i++)
+		{
+			if(A[i]<Min)
+			{
+				res=i;
+				Min=A[i];
+			}
+		}
+		return res;
+	}
+	double dAbs(double x)
+	{
+		if(x<0) return (-1.0)*x;
+		return x;
+	}
+	void IPD::calculateBadLLR()
+	{
+		int iter=0,j,Min;
+		double A[N],Max=9000;
+		for(j=0;j<globalN;j++)
+			A[j]=dAbs(CostVector.A[j]);
+		for(j=0;j<globalN;j++)
+		{
+			Min=findMin(A,globalN);
+			A[Min]=Max;
+			CostVector.badLLR[j]=Min;
+		}
+	}
+
+
+	bool IPD::matrixAdaptation()
+	{
+		int l,j,p,i,h,source,dest;
+		bool ans,corrected[N]={false}; //=the indices that have been column zeroized up untill now
+		int n=P.base,m=P.Zs;
+		double Temp[N];
+		calculateBadLLR();
+		l=0;
+		P.clone();
+		for(i=0;i<m;i++)
+		{
+			for(h=0;h<globalN;h++) Temp[h]=P.Ares[i][h];
+ 			for(p=0;p<globalN;p++)
+			{
+				source=CostVector.badLLR[p];dest=p;
+				P.Ares[i][dest]=Temp[source];
+			}
+		}
+		for (p=0;p<n;p++)
+		{
+			j=p;
+			if(l<m)
+			{
+				if(!rowOperation(l,j,n,m,corrected))
+				{
+					printSolution();
+					P.Print(1);
+					break;
+				}
+				corrected[j]=true;
+				l++;
+			}
+			if (l==m) break;
+		}
+		i=0;
+		for(i=0;i<m;i++)
+		{
+			for(h=0;h<globalN;h++) Temp[h]=P.Ares[i][h];
+			for(l=0;l<globalN;l++)
+			{
+				dest=CostVector.badLLR[l];source=l;
+				P.Ares[i][dest]=Temp[source];
+			}
+		}
+		printSolution();
+		P.Print(1);
+		//P.Print(2);
+		for(p=0;p<m;p++)
+		{
+			for(j=0;j<globalN;j++)
+			{//58, 62,23
+				P.A[p][j]=P.Ares[p][j];
+			}
+		}
+		saveHmatrix();
+		return true;
+	}	
+
+	void IPD::saveHmatrix()
+	{
+		int p,j;
+		globalM=globalN-globalK;
+		for(p=0;p<globalM;p++)
+		{
+			for(j=0;j<globalN;j++)
+			{
+				P.ABackup[p][j]=P.A[p][j];
+			}
+			globalM=globalN-globalK;
+		}
+	}
+	void IPD::restoreHmatrix()
+	{
+		int p,j;
+		for(p=0;p<globalM;p++)
+		{
+			for(j=0;j<globalN;j++)
+			{
+				P.A[p][j]=P.ABackup[p][j];
+			}
+		}
+	}
+
+	int IPD::round(double x)
+	{
+		int n= (int) x;
+		  if (fabs(x-n)<0.5) 
+			  return n;
+		  else return n+1;
+	}
+
+	bool IPD::rowOperation(int l,int j,int n,int m,bool corrected[N])
+	{
+		int i;
+		int k=findLeader(j,n,m,corrected);
+		if(k==-1) return false; //means that no row could represent a leader
+		if(k!=l) swapRows(k,l,n+P.Zs);
+		for (i=0;i<m;i++)
+		{
+			if(i==l) continue; //that covers also the case in which k==l==i
+			if(P.Ares[i][j]==1) addRows(i,l,n,P.Zs); //Ri<-Ri+Rk  for 0...n-1
+		}
+		return true;
+	}
+	
+	void IPD::swapRows(int k, int l,int len,int **arr)
+	{
+		int j;int tmp;
+		int **a;
+		if(arr) a=arr; else a=(int **)P.Ares;
+		for (j=0;j<len;j++)
+		{
+			tmp=P.Ares[k][j];
+			P.Ares[k][j]=P.Ares[l][j];
+			P.Ares[l][j]=tmp;
+		}
+	}
+
+
+	void IPD::addRows(int i,int k,int n,int addition) //Ri:=Ri+Rk
+	{
+		int j;
+		for (j=0;j<n;j++)
+			P.Ares[i][j]=(P.Ares[i][j]+P.Ares[k][j])%2;
+		for (j=n;j<n+addition;j++)
+		{
+			P.Ares[i][j]=(P.Ares[i][j]+P.Ares[k][j]);
+			if(P.Ares[i][j]==-4) P.Ares[i][j]=0; //it means that 2 rows containing an old leader were added
+			// and thus adding it twice should have NO impact!
+		}
+	}
+
+int IPD::findLeader(int j,int n,int m,bool corrected[N])
+{
+	int i;
+	int k,flag=0;
+	for(i=0;i<m;i++)
+	{
+		if(P.Ares[i][j]==0) continue;
+		for(k=0;k<j;k++)
+		{
+			if(corrected[k] && P.Ares[i][k]==1)// in order to verify we are not damaging the 
+				//columns alredy zeroized
+			{
+				flag=1;
+				break;
+			}
+		}
+		if(!flag) return i;
+		else flag=0;
+	}
+	return -1;
+}
+
+bool IPD::advancedConstructH(int n,int m)
+{
+	int d1,i,j,dim=0,k,nonIntegrals[N],Blanks[N];
+	int **arr,**iarr;
+	bool ans;
+	for(i=0;i<n;i++)
+	{
+		if(solution[i]<1 && solution[i]>0)
+		{
+			nonIntegrals[dim]=i;
+			dim++;
+		}
+	}
+	arr=(int **) malloc (dim*sizeof(int *));
+	for(j=0;j<dim;j++)
+		arr[j]=(int *) malloc (dim*sizeof(int));
+	ans=placeNonIntegrals(arr,dim,nonIntegrals,Blanks,m);
+	if(!ans) return false; //means that the rank of A is < then the # of non-integrals.
+	print(arr,dim,dim);
+	iarr=(int **) malloc (dim*sizeof(int *));
+	for(j=0;j<dim;j++)
+		iarr[j]=(int *) malloc (dim*sizeof(int));
+	genAdvancedH(iarr,Blanks,nonIntegrals,dim,n,m,n+m);
+	inverse(arr,iarr,dim);
+	//free arr
+	for(j=0;j<dim;j++)
+		free (arr[j]);
+	free(arr);
+	return 1;
+}
+
+void IPD::inverse(int **s,int **d,int dim)
+{
+	int x,i,j,i1,j1,k=dim-1;
+	int **proxy;
+	proxy=(int **) malloc (k*sizeof(int *));
+	for(j=0;j<k;j++)
+		proxy[j]=(int *) malloc (k*sizeof(int));
+	for(i=0;i<dim;i++)
+		for(j=0;j<dim;j++)
+		{
+			for(i1=0;i1<dim && i1!=i;i1++)
+				for(j1=0;j1<dim && j1!=j;j1++)
+					proxy[i1][j1]=s[i1][j1];
+			d[j][i]=det(proxy,k);
+		}
+}
+
+void IPD::genAdvancedH(int **key,int Blanks[N],int nonIntegrals[N],int dim,int n,int m,int len)
+{
+	int **proxy;
+	int i,i1,j,k,l,x,diff=m-dim,rolls=0;
+	proxy=(int **) malloc (m*sizeof(int *));
+	for(j=0;j<k;j++)
+		proxy[j]=(int *) malloc (n*sizeof(int));
+	for(i=0;i<n;i++)
+	{
+		if(Blanks[i-rolls])
+		{
+			for(i1=i-rolls;i1<n-1;i1++)
+				swapRows(i1,i1+1,len);
+			rolls++;
+		}
+	}
+	for(i=0;i<dim;i++)
+		for(j=0;j<n;j++)
+		{
+			x=0;
+			for(l=0;l<dim;l++)
+				x=(x+key[i][l]*P.Ares[l][j])%2;
+			proxy[i][j]=x;
+		}
+	for(i=0;i<dim;i++)
+		for(j=0;j<n;j++)
+			P.Ares[i][j]=proxy[i][j];
+	for(i=dim;i<m;i++)
+		for(j=0;j<n;j++)
+		{
+			l=0;
+			if(nonIntegrals[j] && P.Ares[i][j])
+				addRows(i,l,n,m);
+			l++;
+		}
+}
+
+
+
+
+
+
+bool IPD::placeNonIntegrals(int **arr,int dim,int nonIntegrals[N],int Blanks[N],int lim)
+{
+	int i=0,j=0,l=0,acc=0,flag=0;
+	while(acc<dim)
+	{
+		if(i>lim||i==lim)return false;
+		for(j=0;j<dim;j++)
+		{
+			arr[acc][j]=P.A[i][nonIntegrals[j]];
+			if(arr[acc][j]==1)flag=1;
+		}
+		if(!flag || dependent(arr,dim,acc+1))
+		{
+			Blanks[l]=i;
+			l++;i++;
+			continue;
+		}
+		i++;acc++;flag=0;
+		print(arr,acc,dim);
+	}
+	print(arr,acc,dim);
+	return true;
+}
+
+int IPD::det(int **a,int n)
+{
+   int i,j,j1,j2;
+   int ans = 0;
+   int **m = NULL;
+
+   if (n < 1) { return -1;
+
+   } else if (n == 1) { /* Shouldn't get used */
+      ans = a[0][0];
+   } else if (n == 2) {
+      ans = (a[0][0] * a[1][1] + a[1][0] * a[0][1])%2;
+   } else {
+      ans = 0;
+      for (j1=0;j1<n;j1++) {
+         m = (int **) malloc((n-1)*sizeof(int *));
+         for (i=0;i<n-1;i++)
+            m[i] = (int *) malloc((n-1)*sizeof(int));
+         for (i=1;i<n;i++) {
+            j2 = 0;
+            for (j=0;j<n;j++) {
+               if (j == j1)
+                  continue;
+               m[i-1][j2] = a[i][j];
+               j2++;
+            }
+         }
+		 ans+= a[0][j1]? det(m,n-1):0;
+		 ans=ans%2;
+         for (i=0;i<n-1;i++)
+            free(m[i]);
+         free(m);
+      }
+   }
+   return(ans);
+}
+
+
+bool IPD::dependent(int **arr,int n,int m) //true<=>dependent
+{
+   int i,j,k,maxrow;
+   bool ans;
+   int tmp;
+   int **a=(int **) malloc(m*sizeof(int *));
+   for(i=0;i<m;i++)
+	   a[i]=(int *) malloc(n*sizeof(int));
+   for(i=0;i<m;i++)
+	   for(j=0;j<n;j++)
+		   a[i][j]=arr[i][j];
+   //untill now we only cloned arr->a
+   for (i=0;i<m;i++) {
+
+      /* Find the row with the largest first value */
+      maxrow = i;
+      for (j=i+1;j<n;j++) {
+         if ((a[i][j]) ==1)
+            maxrow = j;
+      }
+
+      /* Swap the maxrow and ith row */
+      for (k=0;k<m;k++) {
+         tmp = a[k][i];
+         a[k][i] = a[k][maxrow];
+         a[k][maxrow] = tmp;
+      }
+      /* Singular matrix? 
+      if (a[i][i]==0)
+         return true;
+		 */
+
+      /* Eliminate the ith element of the jth row */
+      for (j=i+1;j<n;j++) {
+         for (k=m-1;k>i ||k==i;k--) {
+            a[k][j]=(a[k][j] + a[k][i] * a[i][j])%2;
+         }
+	  }
+   }
+   if(a[m-1][m-1]) ans=false; else ans =true;
+   for(i=0;i<m;i++)
+	   free(a[i]);
+   free(a);
+   return ans;
+}
+void IPD::print(int **arr,int m,int n)
+{
+	return;
+	int i,j;
+		for(i=0;i<m;i++)
+		{
+			for(j=0;j<n;j++)
+			{
+				//cout<<arr[i][j]<<" ";
+			}
+			//cout<<endl;
+		}
+		//cout<<endl;
+}
+
+
+bool IPD::CGA2()
+	{
+		int m=P.Zs;
+		double sum=0;
+		int i,ki,Jmax,norm;
+		bool flag=false;
+		for(i=0;i<m;i++)
+		{
+			sum=0;
+			ki=findKi(i);
+			norm=findAi(i,sum);
+			Jmax=findJmax(Ai);
+			if(norm==1)
+				if(ki%2==1)
+				{
+					if(!construct4(ki,Jmax)) continue;
+					flag =true;
+					printSolution();
+					P.Print();
+				}
+				else 
+				{ 
+					if(!construct5(ki,Jmax)) continue;
+					flag=true;
+					printSolution();
+					P.Print();
+				}
+			else if((norm>2 || norm==2) && ki%2==1 && sum<1)
+			{
+				if(!construct7(ki)) continue;
+				flag=true;
+				printSolution();
+				P.Print();
+			}
+			else if((norm>2 || norm==2) && ki%2==0 && solution[Jmax]>sum-solution[Jmax])
+			{			
+				if(!construct8(ki,Jmax)) continue;
+				flag=true;
+				printSolution();
+				P.Print();
+			}
+		}
+		if(flag==true) return flag;
+		return flag;
+	}
+
+	bool IPD::construct4(int ki,int Jmax)
+	{
+		int c=0;
+		int b=ki-1;
+		B[Jmax]=-1;
+		return P.Update3(B,b,c);
+	}
+	bool IPD::construct5(int ki,int Jmax)
+	{
+		int c=0;
+		int b=ki;
+		B[Jmax]=1;
+		return P.Update3(B,b,c);
+	}
+
+	bool IPD::construct7(int ki)
+		{
+			int j,c=0;
+			int b=ki-1;
+			for(j=0;j<P.base;j++)
+				if(Ai[j]==1) B[j]-=1;
+			return P.Update3(B,b,c);
+		}
+	bool IPD::construct8(int ki,int Jmax)
+		{
+			int j,c=0;
+			int b=ki;
+			for(j=0;j<P.base;j++)
+				if(Ai[j]==1) B[j]-=1;
+			X[Jmax]=1;
+			return P.Update3(B,b,c);
+		}
+	int IPD::findKi(int i)
+	{
+		//B: if the variable is significant (connected), then if =1->Bj=1
+		//and if=0->Bj=-1. O/W->Bj=0;
+		int j,ans=0;
+		for(j=0;j<P.J;j++) B[j]=0;
+		for(j=0;j<P.base;j++)
+		{
+			if(P.Ares[i][j]==1 && solution[j]==1)
+			{
+				ans++;
+				B[j]=1;
+			}
+			if(P.Ares[i][j]==1 && solution[j]==0) B[j]=-1;
+		}
+		return ans;
+	}
+		
+	int IPD::findAi(int i,double &sum)
+	{
+		int j;
+		int ans=0;
+		for(j=0;j<P.base;j++)
+			Ai[j]=0;
+
+		for(j=0;j<P.base;j++)
+			if(P.Ares[i][j]==1 && solution[j]<1 && solution[j]>0)
+			{
+				Ai[j]=1;
+				ans++;
+				sum+=solution[j];
+			}
+		return ans;
+	}
+	int IPD::findJmax(int *A)
+	{
+		int j,ans=0;
+		double max=0;
+		for(j=0;j<P.base;j++)
+			if(A[j]==1 && solution[j]>max) 
+			{
+				max=solution[j];
+				ans=j;
+			}
+		return ans;
+	}
+
+	ofstream &
+	IPD::label(int i)
+	{
+			if(i<10) outFile<<"0000"<<i;
+			else if(i<100)outFile<<"000"<<i;
+			else if (i<1000)outFile<<"00"<<i;
+			else if (i<10000)outFile<<"0"<<i;
+			else outFile<<i<<endl;
+			return outFile;
+	}
+	void
+	IPD::writeRows()
+	{
+		outFile<<endl<<"ROWS"<<endl<<" N  COST";
+		int i,j=0;
+		for (i=0;i<P.I;i++)
+		{
+			switch (P.C[i])
+			{
+			case 0: {outFile<<endl<<" L  R";break;}
+			case 1: {outFile<<endl<<" E  R";break;}
+			case 2: {outFile<<endl<<" G  R";break;}
+			}
+			label(i);
+		}
+	}
+	void
+	IPD::writeXColumns()	//writes only the form: X1+X3+X4-2Z1=0. no other coeff.
+	{
+		int i,j=0;
+		
+		for(j=0;j<P.base;j++)
+		{	
+			double cc=CostVector.A[j];
+			outFile<<endl<<"    X";label(j);
+			if(cc<0) outFile<<"    COST       "; //first, treat the target function
+			else outFile<<"    COST        ";
+			outFile<<cc;
+			for(i=0;i<P.I ;i++)
+				if(P.A[i][j]!=0)
+				{
+					outFile<<endl<<"    X";label(j);outFile<<"    R";label(i);
+					if(P.A[i][j]>0) outFile<<" ";
+					outFile<<"             ";outFile<<P.A[i][j];outFile<<".";
+				}
+		}
+	}
+	void
+	IPD::writeZColumns()	//writes  the form: X1+X3+X4-2Z1=0. 
+	{
+		int j=0;
+		for(j=P.base;j<P.J;j++)
+			for(int i=0;i<P.Zs;i++)
+				if(P.A[i][j]!=0)
+				{
+					outFile<<endl<<"    Z";label(j-P.base);outFile<<"    R";label(i);
+				outFile<<"             ";
+				outFile<<P.A[i][j];outFile<<".";
+				}
+	}
+	void
+	IPD::writeColumns()
+	{
+		outFile<<endl<<"COLUMNS";
+		writeXColumns();
+		writeZColumns();
+	}
+	void
+	IPD::writeRHS()
+	{
+		outFile<<endl<<"RHS";
+		for(int i=0;i<P.I;i++)
+		{
+			outFile<<endl<<"    RHS       R";label(i)<<"              "<<P.B[i];outFile<<".";
+		}
+	}
+	void
+	IPD::writeVariablesLimitsETerminate()
+	{
+		outFile<<endl<<"BOUNDS";
+		int i,j=0;
+		for(j=0;j<P.base;j++)
+		{
+			outFile<<endl<<" UP "<<"BND1      "<<"X";label(j)<<"              1.";
+			outFile<<endl<<" LO "<<"BND1      "<<"X";label(j)<<"              0.";
+		}
+		for(i=0;i<P.Zs;i++)
+		{
+			outFile<<endl<<" LO "<<"BND1      "<<"Z";label(i)<<"              0.";
+		}
+		outFile<<endl<<"ENDATA";
+		outFile.close();
+	}
+
+
+	void IPD::printSolution()
+	{
+		int i,dist;
+		int X[N];
+		return;
+		//cout<<endl;
+		for(i=0;i<P.base;i++)
+			X[i]= (int) solution[i];
+		for(i=0;i<P.base+P.Zs;i++)
+		{
+			cout<<solution[i];
+			cout<<" ";
+		}
+		dist=distance(X,CostVector.S,P.base);
+		//cout<<"    "<<dist;
+		//cout<<endl;
+	}
+
+	void IPD::printML()
+	{
+		return;
+		int i;
+		for(i=0;i<P.base;i++)
+		{
+			cout<<XML[i];
+			cout<<" ";
+		}
+		cout<<"    "<<distance(XML,CostVector.S,P.base);
+		cout<<endl;
+		for(i=0;i<P.base;i++)
+		{
+			cout<<CostVector.S[i];
+			cout<<" ";
+		}
+		cout<<endl;
+	}
+
+	bool IPD::integralX()
+	{
+		int k,x;
+		for(k=globalVars;k<globalVars+globalN;k++)
+		{
+			x=(int) solution[k];
+			if(fabs(solution[k]-x)>EPS) return false; 	
+			
+		}
+		return true;
+	}
+	bool IPD::integral()
+	{
+		int k,x;
+		//checking the Zs first:
+		for(k=P.base;k<P.J;k++)
+		{
+			x=(int) solution[k];
+			if(fabs(solution[k]-x)>EPS) return false; 
+		}// now, check the X:
+		return integralX();
+	}
+
+	int IPD::initPerm(ifstream &myfile3)
+	{
+		return CostVector.InitPerm(myfile3);
+	}
+	bool IPD::Perm(int k,int A[N])
+	{
+		if(!k) return false;
+		CostVector.Perm(k,A);
+		P.Perm(k);
+		return true;
+	}
+	bool IPD::IPerm(int k,double A[N])
+	{
+		if(!k) return false;
+		CostVector.IPerm(k,A);
+		//P.IPerm(k);
+		return true;
+	}
+	void IPD::PermAll(int A[N])
+	{
+		 CostVector.PermAll(A);
+	}
+	void IPD::PermAll(double A[N])
+	{
+		 CostVector.PermAll(A);
+	}
+
+	int IPD::MinDistance(double Result[smallM][N])
+	{
+		int i,j;
+		int ans=-1;
+		double temp=0,min=0;
+		for(i=MaxDecodingAttempts-1;i>-1;i--)
+		{
+			for(j=0;j<globalN;j++)
+				temp+=(Result[i][j]-originalX[j])*(Result[i][j]-originalX[j]);
+			if (temp>min)
+			{
+				//if (!isCodeWord(Result[i],globalK)) continue;
+				ans=i;
+				min=temp;
+			}
+			temp=0;
+		}
+		return ans;
+	}
+	void IPD::reset(int flag)
+	{
+		P.reset();
+		if(flag) CostVector.reset();
+		rowNum=SHIFT;
+		//solution+=N;
+	}	
+	void IPD::softReset()
+	{
+		P.reset();
+	}
+
+void IPD::ML()
+{
+	double d,dmin=1000;
+	int n=P.base;
+	double dTrue;
+	int Y[N];
+	double checks=pow(2.0,globalK);
+	int k,i,j,t,t_k;
+	int Temp[N];
+	bool flag=false,flag1=false;
+	int localOriginal[N];
+	for(k=0;k<globalN;k++)
+	{
+		localOriginal[k]=original[k];
+	}
+	dTrue=distance(localOriginal,originalX,globalN);
+	for(k=0;k<checks;k++)
+	{
+		t_k=k;
+		for(i=0;i<globalK;i++)
+		{
+			if(t_k%2)
+				Temp[i]=1;
+			else Temp[i]=0;
+			t_k/=2;
+		}
+		if(k%1000000==0)
+		{
+			cout<<k<<" of: "<<checks<<endl;
+		}
+		multV(G,Temp,Y,globalN,globalK);
+		d=distance(Y,originalX,globalN);
+		if(d<dmin)
+		{
+			if(flag)
+			{
+				if((!flag1))
+				{
+					flag=flag;
+					MLError++;
+					flag1=true;
+				}
+			}
+			if(d==dTrue)
+			{
+				flag=true;
+				d=d;
+			}
+			for(j=0;j<n;j++)
+				solution[j]=Y[j];
+			dmin=d;
+		}
+	}
+	int TMP[N];
+	for(k=0;k<globalN;k++)
+	{
+		TMP[k]=original[k];
+	}
+	double dT=distance(TMP,originalX,globalN);
+}
+
+bool IPD::checkCodeWord(int X[])
+{
+	int i,j,check=0;
+	for(i=0;i<P.rI;i++)
+	{
+		check=0;
+		for(j=0;j<P.base;j++)
+			check+=(P.A[i][j]*original[j]);
+		if(check%2) 
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
+
+	
+double IPD::distance(int A[],double B[],int len)
+{
+	double res=0;
+	int i;
+	for(i=0;i<len;i++)
+		res+=(1.0*A[i]-B[i])*(1.0*A[i]-B[i]);
+	return res;
+}
+
+void IPD::printCV()
+{
+	int j;
+	/*
+	cout<<endl;
+	for(j=0;j<P.base;j++)
+		cout<<CostVector.A[j]<<" ";
+	cout<<endl;
+	*/
+}
+
+void IPD::updateCV()
+{
+	int j;
+	for(j=0;j<CostVector.I;j++)
+		CostVector.A[j]= 1-2*solution[j];
+}
+int IPD::getLen()
+{
+	return P.base;
+}
+/******************************************************************************/
+//	Standard version with trigonometric calls
+#define PI 3.14159265358979323846
+
+double rand_normal(double mean, double stddev) 
+{
+    static double n2 = 0.0;
+    double x, y, r;
+    static int n2_cached = 0;
+    if (!n2_cached) 
+    {
+        do
+        {
+            x = 2.0*rand()/RAND_MAX - 1;
+            y = 2.0*rand()/RAND_MAX - 1;
+            r = x*x + y*y;
+        } while (r==0.0 || r>1.0);
+        double d = sqrt(-2.0*log(r)/r);
+        double n1 = x*d;
+        double result = n1*stddev + mean;
+        n2 = y*d;
+        n2_cached = 1;
+        return result;
+    }
+    else
+    {
+        n2_cached = 0;
+        return n2*stddev + mean;
+    }
+}
+
+double randn_notrig(double mu=0.0, double sigma=1.0) {
+        static bool deviateAvailable=false;        //        flag
+        static float storedDeviate;                        //        deviate from previous calculation
+        double polar, rsquared, var1, var2;
+       
+        //        If no deviate has been stored, the polar Box-Muller transformation is
+        //        performed, producing two independent normally-distributed random
+        //        deviates.  One is stored for the next round, and one is returned.
+        if (!deviateAvailable) {
+               
+                //        choose pairs of uniformly distributed deviates, discarding those
+                //        that don't fall within the unit circle
+                do {
+                        var1=2.0*( double(rand())/double(RAND_MAX) ) - 1.0;
+                        var2=2.0*( double(rand())/double(RAND_MAX) ) - 1.0;
+                        rsquared=var1*var1+var2*var2;
+                } while ( rsquared>=1.0 || rsquared == 0.0);
+               
+                //        calculate polar tranformation for each deviate
+                polar=sqrt(-2.0*log(rsquared)/rsquared);
+               
+                //        store first deviate and set flag
+                storedDeviate=var1*polar;
+                deviateAvailable=true;
+               
+                //        return second deviate
+                return var2*polar*sigma + mu;
+        }
+       
+        //        If a deviate is available from a previous call to this function, it is
+        //        returned, and the flag is set to false.
+        else {
+                deviateAvailable=false;
+                return storedDeviate*sigma + mu;
+        }
+}
+ 
+
+
+double randn_trig(double mu=0.0, double sigma=1.0) {
+	static bool deviateAvailable=false;	//	flag
+	static float storedDeviate;			//	deviate from previous calculation
+	double dist, angle;
+	
+	//	If no deviate has been stored, the standard Box-Muller transformation is 
+	//	performed, producing two independent normally-distributed random
+	//	deviates.  One is stored for the next round, and one is returned.
+	if (!deviateAvailable) {
+		
+		//	choose a pair of uniformly distributed deviates, one for the
+		//	distance and one for the angle, and perform transformations
+		dist=sqrt( -2.0 * log(double(rand()) / double(RAND_MAX)) );
+		angle=2.0 * PI * (double(rand()) / double(RAND_MAX));
+		
+		//	calculate and store first deviate and set flag
+		storedDeviate=dist*cos(angle);
+		deviateAvailable=true;
+		
+		//	calcaulate return second deviate
+		return dist * sin(angle) * sigma + mu;
+	}
+	
+	//	If a deviate is available from a previous call to this function, it is
+	//	returned, and the flag is set to false.
+	else {
+		deviateAvailable=false;
+		return storedDeviate*sigma + mu;
+	}
+}
+
+/*
+function [s,x]=sigen(H,EbN0,len,n,k,allzeros)
+x=zeros(len*n,1);
+EbN0=globalSNR+10*log10(n/k);
+factor=10^(-EbN0/20)/2;
+noise=factor*randn(n*len,1);
+s=x;
+x=x+noise;
+end
+*/
+
+//*************************************
+void readFile(ifstream &Gfile,int G[N][M],int n,int k)
+{
+	int i,j,dump=0;
+	for (i=0;i<k;i++)
+		for(j=0;j<n;j++)
+		{
+			Gfile>>dump;
+			if((dump !=0) && (dump!=1))
+			{
+				j--;
+				break;
+			}
+			G[i][j]=dump;
+		}
+}
+
+
+void multV(int A[N][M],int V[N],int res[N],int n,int k)
+{
+	int i,j=0,sum=0;
+	for (i=0;i<n;i++)
+	{
+		for(j=0;j<k;j++)
+			sum+=A[j][i]*V[j];
+		res[i]=sum%2;
+		sum=0;
+	}
+}
+void multH(int A[N][M],int V[N],int res[N],int n,int m)
+{
+	int i,j=0,sum=0;
+	for (i=0;i<m;i++)
+	{
+		for(j=0;j<n;j++)
+			sum+=A[i][j]*V[j];
+		res[i]=sum%2;
+		sum=0;
+	}
+}
+
+void reloadBackup()
+{
+	string str;
+	ifstream F(str.c_str());
+	int i;
+	for(i=0;i<globalN;i++)
+	{
+		F>>originalX[i];
+		F>>original[i];
+	}
+}
+
+
+void formatCol(int *X)
+{
+	int i,j;
+	int TMP[N];
+	for(i=0;i<globalN;i++)
+		TMP[i]=X[i];
+	for(i=0;i<globalN;i++)
+	{
+		j=globalFrozen[i];
+		X[i]=TMP[j];
+	}
+}
+
+void genPW(int Y[N],int X[N])
+	{
+		int x,y,z,i,j,ind,stepQ,stepR,step=0;
+		int logi=log10(1.0*globalN)/log10(2.0);
+		int TMP[bigN],A[3];
+		bool overstep;
+		for(i=0;i<bigN;i++)
+			TMP[i]=0;
+		for(i=0;i<globalN;i++)
+		{
+			j=FP[i];
+			TMP[i]=X[i];
+		}
+		for(ind=globalN;ind<2*globalN;ind++)
+		{
+			j=(ind-globalN)/globalN;
+			i=ind-globalN*(j+1);
+			x=ind-globalN;y=ind-globalN+1;
+			globalB1[i][j]=x;globalB2[i][j]=y;
+			if(!pB[i][j])
+			{
+				TMP[ind]=TMP[ind-globalN];
+				continue;
+			}
+			TMP[ind]=(TMP[ind-globalN]+TMP[ind-globalN+1])%2;
+		}
+		for(ind=2*globalN;ind<SHIFT;ind++)
+			{
+				j=(ind-globalN)/globalN;
+				i=ind-globalN*(j+1);
+				step=(int)pow(2.0,logi-j);
+				stepQ=i/step;
+				stepR=i%step;
+				overstep=(stepQ%2!=0);
+				if(overstep)
+				{
+					x=(globalN*j+step*2*(stepQ/2)+1)+2*stepR;
+				}
+				else
+				{
+					x=(globalN*j+step*2*(stepQ/2))+stepR*2;
+				}
+				y=x+2;
+				globalB1[i][j]=x;globalB2[i][j]=y;
+				if(!pB[i][j])
+				{
+					TMP[ind]=TMP[x]%2;
+					continue;
+				}
+				TMP[ind]=(TMP[x]+TMP[y])%2;
+			}
+		for(ind=SHIFT;ind<SHIFT+globalN;ind++)
+		{
+			j=(ind-globalN)/globalN;
+			i=ind-globalN*(j+1);
+			if(ind%2==0)
+			{
+				if(ind%4==0)
+				{
+					x=ind-globalN;
+				}
+				else
+				{
+					x=ind-globalN-1;
+				}
+			}
+			else
+			{
+				x=y;
+			}
+			y=x+2;
+			globalB1[i][j]=x;globalB2[i][j]=y;
+			if(!pB[i][j])
+			{
+				TMP[ind]=TMP[x];
+				continue;
+			}
+			TMP[ind]=(TMP[x]+TMP[y])%2;
+		}	
+
+		for(i=0;i<globalN;i++)
+			Y[i]=TMP[SHIFT+i];
+		for(j=0;j<logi;j++)
+		{
+			formatCol(TMP+globalN*j);
+		}
+	}
+
+bool frozen(int v)
+	{
+		int j;
+		for(j=0;j<globalK;j++)
+		{
+			if(globalFrozen[j]==v) return true;
+		}
+		return false;
+	}
+
+void readWord(int XX[N])
+{
+	int i;
+	string tmp=pwd+"XX.txt";
+	ifstream XXfile(tmp.c_str());
+	for(i=0;i<globalN;i++)
+	{
+		XXfile>>XX[i];
+	}
+}
+
+bool generatePolarSignalBuffer(double X[N])
+{
+	int n=globalN,k=globalK;
+	string str1=pwd+"WGN.txt";
+	string str2=pwd+"Y1.txt";
+	string str3=pwd+"Xorg.txt";
+	ifstream Gfile(gMatrixFile.c_str());
+	ofstream WGN(str1.c_str());
+	ofstream outFile,backup;
+	outFile.open (str2.c_str());
+	if(useBackup)
+	{
+		reloadBackup();
+		return true;
+	}
+	backup.open (str3.c_str());
+	int ind=0,i=0,j=0,l=0,cnt,cntw;
+	bool flag =false;
+	int G[N][M];
+	double num=0;
+	int XX[N];
+	int Y[N];
+	double Z[N];
+	double d=((1.0*globalK)/(1.0*globalN));
+	double EbN0=globalSNR + 10.0*log10(2.0*d);
+	double factor=0.5*pow(10.0,((-1.0*EbN0)/20));
+	while (1)
+	{
+		for(int v=0;v<globalK;v++)
+			W[v]=rand()%2;
+		for(int v=0;v<k;v++)
+			if(W[v]==1)
+			{
+				flag=true;
+				break;
+			}
+		if(flag) break;
+	}
+	//refer to G
+//	for(int p=0;p<10000;p++)
+//		WGN<<rand_normal(0,1)<<" ";
+	
+	if(code==7 || code==8 || code==9)
+	{
+		cnt=0;cntw=0;
+		for (int v=0;v<globalN;v++)
+		{		
+			if(!frozen(v))
+			{
+				XX[v]=W[cntw];
+				cntw++;
+			}
+			else XX[v]=0;	
+		}
+	}
+	if(code==7 && mode==4)
+	{
+		//readWord(XX);
+		genPW(Y,XX);
+	}
+	else if(code==7 || code==8|| code==9) 	
+	{
+		//readWord(XX);
+		readFile(Gfile,G,n,n);
+		multV(G,XX,Y,n,n);
+
+
+	}
+	else 
+	{
+		readFile(Gfile,G,n,k);
+		multV(G,W,Y,n,k);
+	}
+	for(int v=0;v<n;v++)
+	{
+		Z[v]=factor*rand_normal(0,1);
+		X[v]= Z[v]+FACTOR*Y[v];
+		original[v]=FACTOR*Y[v];
+		originalX[v]=1.0*X[v];
+	}
+	//multH(globalP,Y,W,n,n-k);
+	for(int v=0;v<n;v++)
+	{
+		outFile<<30+Y[v];
+		outFile<<" ";
+		backup<<Z[v];
+		backup<<" "; backup<<Y[v];backup<<" ";
+	}
+	outFile.close();
+	backup.close();
+	return true;	
+}
+
+
+bool generateSignalBuffer(double X[N],double snr)
+{
+	snr=globalSNR;
+	double ans;
+	if(globalFreeze) return true;
+	if(code==7||code==8||code==9) return generatePolarSignalBuffer(X);
+	string str1=pwd+"WGN.txt",str2=pwd+"Y1.txt",str3=pwd+"Xorg.txt";
+	int v,n=globalN;
+	int k=globalK;
+	ifstream Gfile(gMatrixFile.c_str());
+	ofstream WGN(str1.c_str());
+	ofstream outFile,backup;
+	outFile.open (str2.c_str());
+	if(useBackup)
+	{
+		reloadBackup();
+		return true;
+	}
+	backup.open (str3.c_str());
+	int ind=0,i=0,j=0,l=0;
+	bool flag =false;
+	//int G[N][M];
+	double num=0;
+	int W[N];
+	int Y[N];
+	double Z[N];
+	double R=(1.0*globalK)/(1.0*globalN);
+	double snrUp=snr+10*log10(2.0*R);
+	double factor=2*pow(10.0,(snrUp/20.0));
+	while (1)
+	{
+		for(int v=0;v<globalK;v++)
+			W[v]=rand()%2;
+		for(int v=0;v<k;v++)
+			if(W[v]==1)
+			{
+				flag=true;
+				break;
+			}
+		if(flag) break;
+	}
+	//refer to G
+//	for(int p=0;p<10000;p++)
+//		WGN<<rand_normal(0,1)<<" ";
+	readFile(Gfile,G,n,k);
+	multV(G,W,Y,n,k);
+	for(v=0;v<n;v++)
+	{
+		Z[v]=rand_normal(0,1)/factor;
+		X[v]= Z[v]+FACTOR*Y[v];
+		original[v]=FACTOR*Y[v];
+		originalX[v]=1.0*X[v];
+	}
+	ans=0;
+	
+	for(v=0;v<n;v++)
+	{
+		ans+=(Z[v]*Z[v]);
+	}
+	ans/=n;
+	//multH(globalP,Y,W,n,n-k);
+	for(int v=0;v<n;v++)
+	{
+		outFile<<30+Y[v];
+		outFile<<" ";
+		backup<<Z[v];
+		backup<<" "; backup<<Y[v];backup<<" ";
+		globalSpecialBackup[v]=originalX[v];
+	}
+	outFile.close();
+	backup.close();
+	return true;	
+}
+//SNR = SNR_vec[SNR_ind] + 10*log10(2*R); // Normalzi SNR by code-rate to get Eb/No
+
+void IPD::Mult(int A[N][M],int V[N],int res[N],int n,int k)
+{
+	int i,j=0,sum=0;
+	for (i=0;i<k;i++)
+	{
+		for(j=0;j<n;j++)
+			sum+=A[j][i]*V[j];
+		res[i]=sum%2;
+		sum=0;
+	}
+}
+
+bool IPD::isCodeWord(int X[N], int k)
+{
+	bool output=true;
+	int res[N];
+	int i=0;
+	Mult(P.A,X,res,P.base,P.base-P.Zs);
+	for(i=0;i<k;i++)
+		if(res[i]!=0) 
+		{
+			output=false;
+			break;
+		}
+	return output;
+}
+double IPD::getI(int i)
+{
+	return CostVector.A[i];
+}
+double calcRef(double x1,double x2)
+	{
+		double ref;
+		if(x1>1 &&x2>1) ref=0;
+		else if(x1>1 && x2<0) ref=1;
+		else if(x2>1 && x1<0) ref=1;
+		else if(x1<0 && x2<0) ref=0;
+		else if(x1<0) ref=x2;
+		else if(x2<0) ref=x1;
+		else if(x1>1)ref=1-x2;
+		else if(x2>1) ref=1-x1;
+		else ref=(x1+x2)*max(x1,x2);
+		return ref;
+	}
+
+void CP::set(int x,int y,int z,double sig,bool s)
+	{
+		int tmp1,tmp2,i;
+		double x1,x2;
+		serial=globalX;
+		globalX++;
+		SHIFT++;
+		significance=sig;
+		leaf=s;
+		dup=false;
+		valid=false;
+		if(x!=y)
+		{
+			child1=x;child2=y;
+			order=z;
+			if(x==-1||y==-1) children=1;
+			else children=2;
+		}
+		else 
+		{
+			child1=-1;
+			child2=y;
+			children=1;
+		}
+		if(serial==child2 && !leaf)
+		{
+			child2=child2;
+		}
+		for(i=0;i<globalX-1;i++)
+		{
+			if((*this)==(*globalPT[i])) //suspect
+			{
+				(*this)=(*globalPT[i]);
+				globalX--;
+				return;
+			}
+		}
+		if(leaf)
+		{
+			x1=originalX[child1];
+			x2=originalX[child2];
+		}
+		else
+		{
+			x1=globalPT[child1]->ref;
+			x2=globalPT[child2]->ref;
+		}
+		ref=calcRef(x1,x2);
+
+		globalPT[serial]=this; //only here enter elements to globalPT
+		if(globalOcc[child1]==0) globalLeavesChildren++;
+		if(globalOcc[child2]==0) globalLeavesChildren++;
+		globalOcc[child1]++;
+		globalOcc[child2]++;
+
+	}
+void CP::setDuplicate()
+{
+	dup=true;
+}

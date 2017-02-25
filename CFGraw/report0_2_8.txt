@@ -1,0 +1,2 @@
+modePT=0  mode=2  code=8  FACTOR=1
+4:   1  	comp:0.0166333    1bit correction: 0

@@ -1,0 +1,3396 @@
+#ifndef _BBB
+#define _BBB
+
+
+#include "ClpSimplex.hpp"
+#include "glpk.h"
+#include "LP_ADMM_Decoder.h"
+#include <iostream>
+#include <fstream>	
+#include <string>
+#include <math.h>
+#include <Windows.h>
+#include <process.h>
+#include <sstream>
+
+
+
+using namespace std;
+
+
+extern int globalDecoder;
+extern void read1MPS(void *v);
+
+extern int globalR;
+
+extern double thres;
+extern double globalSafeZone;
+extern unsigned int globalLPI;
+extern ofstream logFile;
+#define smallM 500
+#define MaximalDepthPossible 40
+#define EPS 0.01
+#define bigN 10000
+#define medN 2000
+#define smallN 1500
+#define N 200
+#define M 200
+#define IA 10000000
+
+
+#define PMax 200
+#define MAX_ITER 1
+#define maxConstraints 1000
+extern int MaxDecodingAttempts;
+extern int localWeaks[N];
+extern int HBackup[N][N];
+extern int globalALG1Iteration;
+extern int globalALG1RowPermutations;
+extern bool globalBL[bigN];
+extern bool noPerms;
+extern string pwd;
+extern bool putZ[bigN];
+extern int glpkLoaded;
+extern bool globalFreeze;
+extern int FP[N];
+extern int globalMaxCorrected;
+extern bool pB[N][N];
+extern int globalVars;
+extern int SHIFT;
+extern double globalSNR;
+extern int globalLim;
+extern int MaxDepth;
+extern int W[N];
+extern int mode;
+extern int globalUseReduction;
+extern int MLError;
+extern bool globalFirst;
+extern int code;
+extern double Exit_Code;
+extern int globalFrozen[N];
+extern double FACTOR;
+extern double solutions[MAX_ITER][N];
+extern int G[N][M];
+extern double solution[bigN];
+extern double test[N];
+extern double lastSolution[N];
+extern double originalX[bigN];
+extern int numOfIterations;
+extern int globalP[M][N];
+extern int globalN;
+extern int permMod;
+extern int globalZs;
+extern int globalK;
+extern int globalM;
+extern int globalNSAfirst;
+extern int globalLastRows;
+extern double globalDW[N];
+extern int globalTot;
+extern int globalZ;
+extern int globalX;
+extern double CVs[smallM][N];
+extern int depthConstraints[MaximalDepthPossible][N];
+extern int depthB[MaximalDepthPossible];
+extern double costVector[N];
+extern string frozenFile;
+extern glp_prob *P1;
+extern double globalSpecialBackup[N];
+extern string gMatrixFile;
+extern string pcMatrixFile;
+extern string politopeFile;
+extern string permFile;
+extern int constraintsLocations[MaximalDepthPossible][2];
+extern int globalH[N][N];
+extern int useBackup;
+extern int Permutations[M][N];
+extern int globalOcc[medN];
+extern int globalLeavesChildren;
+extern bool WeakNodes[N];
+extern double original[N];
+bool generateSignalBuffer(double X[N],double globalSNR);
+extern int globalB1[N][N];
+extern int globalB2[N][N];
+extern int Degrees[M][N];
+extern int globalDynamicRows;
+extern int globalSolve;
+int ADMM();
+class CP
+{
+	int serial;
+	double significance,ref;
+	int child1,child2,children;
+	int order;
+	bool leaf,dup,valid;
+	friend class IPD;
+public:
+	CP()
+	{
+		serial=-1;
+		child1=0;
+		child2=0;
+	}
+	void set(int x,int y,int z,double sig,bool s);
+	bool isValid()
+	{
+		return valid;
+	}
+	void setValid()
+	{
+		valid=true;
+	}
+	CP & operator=(const CP &X)
+	{
+		serial=X.serial;
+		significance=X.significance;
+		child1=X.child1;child2=X.child2;children=X.children;
+		order=X.order;leaf=X.leaf;dup=X.dup;valid=X.valid;
+		return (*this);
+	}
+	bool operator==(const CP &X)const
+	{
+		if(leaf!=X.leaf)return false;
+		if(X.child1==child1 && X.child2==child2)
+		{
+			return true;
+		}
+		if(X.child1==child2 && X.child2==child1)
+		{
+			return true;
+		}
+		return false;
+	}
+	void setDuplicate();
+};
+extern CP *globalPT[bigN];
+extern CP globalCP[N/2][medN];
+class Point
+{
+	int row;
+	int coeff;
+public:
+	Point()
+	{
+		row=0;coeff=0;
+	}
+	friend class IPD;
+};
+
+class Xopt
+{
+	int A[N];
+	double cost;
+	bool success;
+	int adoption;
+public:
+	Xopt()
+	{
+		int i;
+		cost=10000;
+		for(i=0;i<N;i++)
+			A[i]=0;
+		success=false;
+		adoption=0;
+	}
+	int get(int i)
+	{
+		return A[i];
+	}
+	void setSolution()
+	{
+		int j;
+		for(j=0;j<globalN;j++)
+		{
+			solution[j]=A[j];
+		}
+	}
+	bool getSuccess()
+	{
+		return success;
+	}
+
+	void reset()
+	{
+		int i;
+		cost=10000;
+		for(i=0;i<N;i++)
+			A[i]=0;
+		success=false;
+		adoption=0;
+	}
+	bool betterSolution()
+	{
+		int i;
+		double res=0;
+		for(i=0;i<globalN;i++)
+		{
+			res+=costVector[i]*solution[i];
+		}
+		if (res<cost)
+		{
+			if(adoption>0)
+			{
+				i=i;
+			}
+			return true;
+		}
+		return false;
+	}
+	int adoptSolution()
+	{
+		int i;
+		double res=0;
+		if(adoption==1)
+		{
+			res=res;
+		}
+		for(i=0;i<globalN;i++)
+		{
+			res+=costVector[i]*solution[i];
+			A[i]=solution[i];
+		}
+		cost=res;
+		success=true;
+		adoption++;
+		return adoption;
+	}
+	bool res()
+	{
+		return success;
+	}
+};
+
+class CostVector
+{
+	int P[PMax][N],Perms[smallM];
+	int numIPerms,K,L;
+	double input[MAX_ITER][N];
+	int iter;
+	friend class IPD;
+	friend class Problem;
+	friend class Xopt;
+public:
+	int I,row;
+	double A[N],S[N],Backup[N];
+	int badLLR[N];
+	bool Init(int n,int dim,int len,double globalSNR)
+	{
+		int cur;
+		bool flag=false;
+		double num;
+		int k=0,i=0,j=0;
+		numIPerms=0;
+		numOfIterations=len;
+		iter=0;
+		I=dim;
+		row=n;
+		reset();
+		return true;
+	}
+	bool reset()
+	{
+		int i;
+		generateSignalBuffer(S,globalSNR);
+		if(mode==4) return true;
+		for(i=0;i<globalN;i++)
+		{
+			A[i]=1-2*originalX[i];
+			costVector[i]=A[i];
+		}
+		/*
+		for(i=0;i<I-row;i++)
+		{
+			S[i+row]=input[iter+1][i];
+			A[i+row]=1-2*S[i+row];
+		}*/
+		iter++;
+		if(iter==MAX_ITER-1) return false;
+		return true;
+	}
+	bool resetDPerm(double globalSNR)//continue from here. add 1 input: the permutation, and then permutate accordingly (the signal) and then derive the costVerctor by the same formula
+	{
+		int i;
+		for(i=0;i<I;i++)
+		{
+			A[i]=1-2*originalX[i];
+		}
+		/*
+		for(i=0;i<I-row;i++)
+		{
+			S[i+row]=input[iter+1][i];
+			A[i+row]=1-2*S[i+row];
+		}*/
+		iter++;
+		if(iter==MAX_ITER-1) return false;
+		return true;
+	}
+	void reset4nextIteration()
+	{
+		int i;
+		return; //this function was intended to combine dynamic decoded data ("solution")
+				//to influence the Cost Vector. didn't work, I am not sure why it should have..
+		for(i=0;i<row;i++)
+			A[i]=1-2*solution[i];
+	}
+
+	int InitPerm(ifstream &Perm)
+	{
+	int i=0,j=0,k=0,res=0;
+		for (i=0;i<I;i++) P[0][i]=Permutations[0][i]=i;
+		i=1;
+		string line;string::iterator iter;
+		if(Perm.is_open())
+		{
+			Perm.seekg(Perm.beg);
+			getline(Perm,line);
+			if(!line[0]) return 0;
+			j=k=0;
+			while (line[0])
+			{
+				iter=line.begin();
+			while(iter!=line.end())
+				{
+					while(iter[0]==' ')
+					{
+						iter++;
+						if(iter==line.end()) break;
+					}
+					if(iter==line.end()) break;
+					while(iter[0]!=' ')
+					{
+						if(k>0)P[i][j]=P[i][j]*10+iter[0]-'0';else P[i][j]=iter[0]-'0';
+						Permutations[i][j]=P[i][j];
+						k++;iter++;
+ 						if(iter==line.end()) break;
+					}
+					j++;k=0;
+					if(iter==line.end()) break;
+				}
+				i++;
+				L=j;
+				j=k=0;
+				if(i==globalN+1)break;
+				getline(Perm,line);
+			}
+			K=i;
+			return K-1;
+		}
+		else
+		{
+			cout<<"Unable to open problem file for the problem"<<endl;
+			return 0;
+		}
+	}
+	
+
+	
+	bool IPerm(int k,double A[N])
+	{
+		int i,source,dest;
+		if (k==0) return false;
+		double Temp[N];
+		for(i=0;i<globalN;i++) Temp[i]=A[i];
+		for(i=0;i<globalN;i++)
+		{
+			source=Permutations[0][i];dest=Permutations[k][i];
+			A[dest]=Temp[source];
+		}
+		Perms[numIPerms]=k;
+		numIPerms++;
+		return true;
+	}
+	
+	bool Perm(int k,int A[N])
+	{
+		int i,source,dest;
+		if (k==0) return false;
+		int Temp[N];
+		for(i=0;i<row;i++) Temp[i]=A[i];
+		for(i=0;i<row;i++)
+		{
+			source=P[k][i];dest=P[0][i];
+			A[dest]=Temp[source];
+		}
+		numIPerms--;
+		return true;
+	}
+	bool Perm(int k,double A[N])
+	{
+		int i,source,dest;
+		if (k==0) return false;
+		double Temp[N];
+		for(i=0;i<row;i++) Temp[i]=A[i];
+		for(i=0;i<row;i++)
+		{
+			source=P[k%globalN][i];dest=P[0][i];
+			A[dest]=Temp[source];
+		}
+		numIPerms--;
+		return true;
+	}
+	void PermAll(int A[N])
+	{
+		while(numIPerms)
+			Perm(Perms[numIPerms-1],A);
+	}
+	void PermAll(double A[N])
+	{
+		while(numIPerms)
+			Perm(Perms[numIPerms-1],A);
+	}
+};
+
+
+
+
+class Problem
+{
+int A[M][N];
+int ABackup[M][N];
+int Ares[M][N];
+int B[bigN];
+int C[bigN];
+int Removed[maxConstraints];
+double eps,p;
+int I,lastI,J,base,Zs,rI,rJ,rbase,rZs; //to store maximal index valid
+friend class IPD;
+friend class CostVector;
+public:
+	void reset()
+	{
+		I=rI;J=rJ;base=rbase;Zs=rZs;
+	}
+	int Init(ifstream &problem)
+	{
+		int i=0,j=0,k=0,l;
+		string line;string::iterator iter;
+		if(problem.is_open())
+		{
+			getline(problem,line);
+			if(!line[0]) return false;
+			p=log((1-EPS)/EPS);
+			j=k=0;
+			while (line[0])
+			{
+				iter=line.begin();
+			while(iter!=line.end())
+				{
+					while(iter[0]==' ')
+					{
+						iter++;
+						if(iter==line.end()) break;
+					}
+					if(iter==line.end()) break;
+					while(iter[0]!=' ')
+					{
+						if(k>0)A[i][j]=A[i][j]*10+iter[0]-'0';else A[i][j]=iter[0]-'0';
+						k++;iter++;
+ 						if(iter==line.end()) break;
+					}
+					j++;k=0;
+					if(iter==line.end()) break;
+				}
+				i++;
+				J=j;
+				j=k=0;
+				if(!problem.good())break;
+				getline(problem,line);
+			}
+			I=i;
+		}
+		else
+		{
+			cout<<"Unable to open problem file for the problem"<<endl;
+			return false;
+		}
+		for(i=0;i<I;i++)
+			for(j=J;j<J+I;j++)
+				if (i==j-J) A[i][j]=-2; else A[i][j]=0;
+		base=J;Zs=I;
+		J+=I;
+		for (i=0;i<I;i++) C[i]=1;
+		for (i=0;i<I;i++) B[i]=0;
+		rI=I;rJ=J;rbase=base;rZs=Zs;
+		if(globalFirst)
+		{
+			//globalN=base;globalK=base-Zs; 
+			globalFirst=false;
+		}
+		for(i=0;i<(globalN-globalK);i++)
+			for(j=0;j<globalN;j++)
+				globalP[i][j]=A[i][j];
+		return J;
+	}
+	void remConstraint(int con=0)
+	{
+		int i,j,l,removed,shift=0;
+		if(con!=0)
+		{
+			Removed[0]=con;
+			Removed[1]=-1;
+		}
+		for(l=0;l<maxConstraints;l++)
+			if(Removed[l]==-1)break;
+		removed=l;
+		l=0;
+		for(i=Removed[0];i<I;i++)
+		{
+			if(i>Removed[0])
+				remConstraintHelper(i,shift);
+			if(i==Removed[l])
+			{
+				shift++;
+				l++;
+			}
+		}
+		I-=removed;
+	}
+		
+	void remConstraintHelper(int i,int shift)
+	{
+		int j,dest;
+		if(shift==0) return;
+		if (shift<0) 
+		{
+			cout<<"ERRRRRRRRR"<<endl<<endl<<endl<<endl<<endl;
+			return;
+		}
+		dest=i-shift;
+		for(j=0;j<J;j++)
+			A[dest][j]=A[i][j];
+		B[dest]=B[i];
+		C[dest]=C[i];
+	}
+
+	bool Update3(int X[N],int b,int c) //returns false in case of same input as last iteration
+	{// X=vector of coeffs,b=scalar, c ={<....0 ,>....2,=....1} 
+		int j=0;
+		bool flag=false;
+		for(j=0;j<J;j++) 
+			if(X[j]!=A[I-1][j]) flag =true;
+		if(b!=B[I-1] || c!=C[I-1]) flag=true;//////!!! check if it is a new cut.
+		// if not - mage CGA2 keep looking for another i<m which does bring a new
+		//cut 1!!!!!!!!!!!!!!
+		if(flag==false) return false;
+		for (j=0;j<J;j++) A[I][j]=X[j];
+		B[I]=b; C[I]=c;
+		I++;
+		return true;
+	}
+	void Print(int flag=0)
+	{
+		int i,j=0;
+		/*
+		cout<<endl;
+		ofstream outFile;
+		if(flag==0)
+		{
+			for(i=0;i<I;i++)
+			{
+				for(j=0;j<J;j++)
+					cout<<A[i][j]<<" ";
+				switch (C[i])
+				{
+					case 0:
+						{cout<<"< "; break;}
+					case 1:
+						{cout<<"= "; break;}
+					case 2:
+						{cout<<"> "; break;}
+				}
+				cout<< B[i]<<endl;
+			}
+			return;
+		}
+		else if (flag==1)
+		{
+			for(i=0;i<rI;i++)
+			{
+				for(j=0;j<J;j++)
+					cout<<Ares[i][j]<<" ";
+				switch (C[i])
+				{
+					case 0:
+						{cout<<"< "; break;}
+					case 1:
+						{cout<<"= "; break;}
+					case 2:
+						{cout<<"> "; break;}
+				}
+				cout<< B[i]<<endl;
+			}
+		}
+		else if(flag==2)
+		{
+			outFile.open ("proxy1.txt");
+			for(i=0;i<rI;i++)
+			{
+				for(j=0;j<63;j++)
+					outFile<<Ares[i][j]<<" ";
+				outFile<<endl;
+			}
+		}
+		*/
+	}
+	void clone()
+	{
+		int i,j;
+		for(i=0;i<rI;i++)
+			for(j=0;j<rJ;j++)
+				Ares[i][j]=A[i][j];
+	}
+	bool IPerm(int k)
+	{		
+		int i,j,l,h,source,dest;
+		if (k==0) return false;
+		int Temp[N];double T2[N];
+		for(i=0;i<(globalN-globalK);i++)
+			for(j=0;j<globalN;j++)
+				A[i][j]=globalP[i][j];
+		for(i=0;i<(globalN-globalK);i++)
+		{
+			for(h=0;h<globalN;h++) 
+			{
+				Temp[h]=A[i][h];
+				
+			}
+			for(l=0;l<globalN;l++)
+			{
+				source=Permutations[0][l];dest=Permutations[k][l];
+				A[i][dest]=Temp[source];
+			}
+		}
+		for(i=0;i<(globalN-globalK);i++)
+			for(j=0;j<globalN;j++)
+				globalP[i][j]=A[i][j];
+	}
+	bool Perm(int k)
+	{
+		int i,l,h,source,dest;
+		if (k==0) return false;
+		double Temp[N];
+		for(i=0;i<rI;i++)
+		{
+			for(h=0;h<rJ;h++) Temp[h]=A[i][h];
+			for(l=0;l<rJ;l++)
+			{
+				dest=Permutations[0][l];source=Permutations[k][l];
+				A[i][dest]=Temp[source];
+			}
+		}	
+	}
+};
+
+
+
+class IPD
+{
+	//TODO add a member: Constraints in the RIPD class
+	//(initially empty and for this reason is nglegted at this stage.
+	//Target Func: we want to minimize the flips. if recieved 1=> as is, else=>minus.
+	int Ai[N];
+	int B[N];
+	bool R[N][N];
+	int comA[M][medN];
+	int comB[N];
+	int comC[N];
+	int cga1Constraints;
+	bool globalTerminatePT[M];
+	Problem P;
+	ofstream outFile;
+	bool flagRegConstraints;
+	ifstream input;
+	int localWriteFlag;
+	int rowNum,finalrowNum;
+	bool firstPT;
+	int XPT[bigN][medN];
+	int CNT[bigN];
+	bool LT1[bigN],cga1Active;
+	int Zs,cga1constraints,gcga1;
+	int EVEN[N];
+	bool validX[bigN];
+	bool noZ[bigN];
+	bool usedConstraints[N];
+	bool Z[N][N];
+public:
+	int X[N];
+	CostVector CostVector;
+	IPD(ifstream &fProblem);
+	void printSolution();
+	void Build(int flag=0);//Translates the LP Problem to an MPS file
+	int Solve();//Envokes CLP Procedure to solve the MPS file
+	int glpkSolve();//Envokes CLP Procedure to solve the MPS file
+	void glpkBuild();//Envokes CLP Procedure to solve the MPS file
+	int clpSolve();//Envokes CLP Procedure to solve the MPS file
+	void CGA1();//Runs CGA1 procedure in order to eliminate non-integral Zs
+	void IPD::polarCGA1(int iter);
+	bool ConstructH();
+	void calculateBadLLR();
+	bool matrixAdaptation();
+	bool CGA2();
+	bool integralX();
+	bool integral();
+	int initPerm(ifstream &myfile3);
+	bool Perm(int k,int A[N]);
+	bool IPerm(int k,double A[N]);
+	void PermAll(int A[N]);
+	void PermAll(double A[N]);
+	int MinDistance(double Result[smallM][N]);
+	void reset(int flag=0);
+	void softReset();
+	void save(int sol[N], int solMLD[N]);
+	void ML();
+	void printML();
+	double distance(int A[],double B[],int len);
+	bool sameSolution();
+	void printCV();
+	int getLen();
+	void updatePerms();
+	private:
+	ofstream &label(int i);
+	void writeRows();
+	void writeXColumns();	//writes only the form: X1+X3+X4-2Z1=0. no other coeff.
+	void writeZColumns();	//writes only the form: X1+X3+X4-2Z1=0. no other coeff.
+	void writeColumns();
+	void writeRHS();
+	void writeVariablesLimitsETerminate();
+	int findCGA1(int i);
+	bool rowOperation(int l,int j,int n,int m,bool corrected[N]);
+	int sort4nextJ(int A[N],int n);
+	void addRows(int i,int k,int n,int addition);
+	void swapRows(int k, int l,int len,int **arr=0);
+	int findLeader(int j,int n,int m,bool corrected[N]);
+	int round(double x);
+	void buildOptionsList(int j0,int n,int m,int Options[M][N]);
+	int chooseOption(int j,int n,int m,int l,int Options[M][N]);
+	void Relax(int i,int correcteds,int n,bool relaxation[N]);
+	int AdvancedFindLeader(int j,int n,int m,bool corrected[N],int correcteds);
+	int findKi(int i);
+	int findAi(int i,double &sum);
+	int findJmax(int *A);
+	bool construct4(int ki,int Jmax);
+	bool construct5(int ki,int Jmax);
+	bool construct7(int ki);
+	bool construct8(int ki,int Jmax);
+	
+	void updateCV();
+	void printOptions(int n,int m,int Options[M][N]);
+	int det(int **a,int n);
+	int rank(int **A,int n,int m);
+	bool dependent(int **arr,int n,int m);
+	void print(int **arr,int n,int m);
+	bool advancedConstructH(int n,int m);
+	bool placeNonIntegrals(int **arr,int dim,int nonIntegrals[N],int Blanks[N],int lim);
+	void genAdvancedH(int **key,int Blanks[N],int nonIntegrals[N],int dim,int n,int m,int len);
+	void inverse(int **s,int **d,int dim);
+	void Mult(int A[N][M],int V[N],int res[N],int n,int k);
+	bool isCodeWord(int X[N], int k);
+	int polarFindCGA1(int i);
+	
+public:
+	double getI(int i);
+	void saveHmatrix();
+	void restoreHmatrix();
+	bool checkCodeWord(int X[]);
+	bool findSuspiciousOldConstraints(bool Sus[maxConstraints],bool Cross[maxConstraints][maxConstraints])
+	{
+		int i,con;
+		if(P.lastI<(globalN-globalK))return false;
+		if(P.lastI==(globalN-globalK)) return true;
+		for(con=P.lastI;con<P.I;con++)
+		{
+			if(isInactive(con)==1)
+			{
+				for(i=0;i<(globalN-globalK);i++)
+				{
+					if(isSubset(i,con))
+					{
+						Sus[i]=true;
+						Cross[con][i]=true;
+					}
+				}
+			}
+		}
+		return true;
+	}
+
+	bool IPerm(int k,int A[N])
+	{
+		int i,source,dest;
+		if (k==0) return false;
+		int Temp[N],T2[N];
+		for(i=0;i<globalN;i++)
+		{
+			Temp[i]=A[i];
+			T2[i]=test[i];
+		}
+		for(i=0;i<globalN;i++)
+		{
+			source=Permutations[0][i];dest=Permutations[k][i];
+			A[dest]=Temp[source];
+			test[dest]=T2[source];
+		}
+		return true;
+	}
+	void remConstraints(bool first)
+	{		
+		int i,con,flag,delta;
+		bool cond;
+		int numNewConstraints=P.I-P.lastI;
+		int originalI=P.I;
+		bool Cross[maxConstraints][maxConstraints];
+		bool Treated[maxConstraints];
+		bool Sus[maxConstraints]; //true <=> violation
+		bool Ref[maxConstraints];
+		int result;
+		//cout<<"here";
+		if(first)
+		{
+			P.lastI=P.I;
+			return;
+		}
+		for(i=0;i<(globalN-globalK);i++)
+			Ref[i]=false;
+		for(con=(globalN-globalK);con<P.lastI;con++)
+		{
+			result=isInactive(con);
+			/*
+			for(i=0;i<(globalN-globalK);i++)
+			{
+				if(isSubset(i,con)) Ref[i]=true;
+			}
+			*/
+			if(result==-1)
+			{
+				if(con>P.lastI-1)
+				{
+					cout<<" ";
+				}
+				P.remConstraint(con);
+			}
+		}
+		P.lastI=P.I;
+	}
+
+
+    /*	
+	void saveI()
+	{
+		P.lastI=P.I;
+	}*/
+
+	int isInactive(int k)
+	{
+		double res=0;
+		int j;
+		double b=P.B[k];
+		int NN=globalN+(globalN-globalK);
+		for(j=0;j<NN;j++)
+			res+=P.A[k][j]*solution[j];
+		if (abs(res-b)< EPS) return 0; // means that the constraint is tight ("=b")
+		if(res>b)
+		{
+			return 1;
+		}
+		return -1;
+	}
+
+
+	bool isSubset(int base,int test)
+	{
+		int j;
+		for(j=0;j<globalN;j++)
+		{
+			if(P.A[base][j]!=0 && P.A[test][j]==0) return false;
+		}
+		return true;
+	}
+
+	bool pureInactive(bool Ref[maxConstraints],int con)
+	{
+		//input: inactive constraint
+		int i,j,k=0;
+		int IE[maxConstraints];
+		int Note[maxConstraints];
+		int NN=globalN+(globalN-globalK);
+		return true;
+		for(j=0;j<NN;j++)
+		{
+			IE[j]=P.A[con][j];
+		}
+		for(i=0;i<(globalN-globalK);i++)
+		{
+			if (isSubset(i,con) && Ref[i])
+			{
+				Note[k]=i;
+				k++;
+			}
+		}
+		for(i=0;i<k;i++)
+		{
+			for(j=0;j<NN;j++)
+				{
+					if(P.A[Note[i]][j]!=0) IE[j]=0;
+				}
+		}
+		for(j=0;j<NN;j++)
+			if(IE[j] != 0) return false;
+		return true;
+	}
+
+	bool findInactives(int con)
+	{
+		int Group[maxConstraints];
+		int i,l,j,k,inActivity,grpcnt=0;
+		bool inActive=true;
+		bool foundInactive=false;
+		i=l=j=k=0;
+		if(con>(globalN-globalK)-1) return false;
+		for(i=(globalN-globalK);i<P.lastI;i++)
+		{
+			if(isSubset(con,i)) 
+			{
+				Group[k]=i;
+				k++;
+			}
+		}
+		Group[k]=-1;
+		grpcnt=k;
+		if(grpcnt>2)
+		{
+			k++;
+		}
+		k=0;
+		for(l=0;l<grpcnt;l++)
+		{
+			inActivity=isInactive(Group[l]); //0: equal, -1:satisfied, not tight, 1: not satisfied
+			if(inActivity==0)return false; 
+			else if(inActivity==-1) 
+			{
+				P.Removed[k]=Group[l];
+				k++;
+				foundInactive=true;
+			}
+			if(inActivity==1)
+			{
+				cout<<"would like to know!!";
+
+			}
+		}
+		P.Removed[k]=-1;
+		if(foundInactive==false) return false;
+		if(isCollide(con))
+		{
+			return true;
+		}
+		return false;
+	}
+	
+	bool belongs2(int A[maxConstraints],int size,int k)
+	{
+		int l;
+		for(l=0;l<size;l++)
+			if(A[l]==k) return true;
+		return false;
+	}
+	
+	bool isCollide(int con)
+	{
+		int V[maxConstraints],Nj[maxConstraints],S[maxConstraints];
+		int i,j,k,l,cntS,cntNj,cntV,argmin;
+		double min=10000.0;
+		double candi,sigma;
+		bool belongs2S=false;
+		cntV=cntS=cntNj=0;
+		for(j=0;j<globalN;j++)
+		{
+			if(P.A[con][j]==1)
+			{
+				Nj[cntNj]=j;
+				cntNj++;
+				if(solution[j]>0.5)
+				{
+					S[cntS]=j;
+					cntS++;
+				}
+			}
+		}
+		//if |S| is odd then V:=S
+		if(cntS%2==1)
+		{
+			for(l=0;l<cntS;l++)
+				V[l]=S[l];
+			cntV=cntS;
+		}
+		//else i*=argmin(Nj){|ui-0.5|}
+		//if i* belongs to S then V:=S-{i*} else V:=S+{i*}
+		else
+		{
+			for(l=0;l<cntNj;l++)
+			{
+				candi=abs(solution[Nj[l]]-0.5);
+				if(candi<min)
+				{
+					min=candi;
+					i=Nj[l];
+				}
+			}
+			for(l=0;l<cntS;l++)
+			{
+				if(S[l]==i) belongs2S=true;
+			}
+			if(belongs2S)
+			{
+				for(l=0;l<cntS;l++)
+					if(S[l]!=i)
+					{
+						V[cntV]=S[l];
+						cntV++;
+					}
+			}
+			else // i does not belong to S
+			{
+				for(l=0;l<cntS;l++)
+					V[l]=S[l];
+				V[cntS]=i;
+				cntV=cntS+1;
+			}
+			// 
+		}
+		sigma=0;
+		for(l=0;l<cntV;l++)
+			sigma+=(1-solution[V[l]]);
+		for(l=0;l<cntV;l++)
+		{
+			if(!belongs2(V,cntV,Nj[l]))
+				sigma+=solution[V[l]];
+		}
+		if(sigma<1) return true;
+		return false;
+	}	
+
+
+	bool noFeasibleSolution(int depth)
+	{	
+		int i,j,k;
+		double sum=0;
+		int intSum;
+		for(i=0;i<(globalN-globalK)+depth;i++)
+		{
+			sum=0;
+			for(j=0;j<globalN;j++)
+				sum+=P.A[i][j]*solution[j];
+			if (sum-round(sum)>EPS) return false;
+			intSum= (int) sum;
+			if (abs(intSum%2)>EPS)
+			{
+				return false;
+			}
+		}
+		return true;
+	}
+
+	bool Update3(int X[N],int b,int c)
+	{
+		return P.Update3(X,b,c);
+	}
+	
+	void setConstriant(int depth,int location, bool val)
+	{
+		int i,n=(globalN-globalK)+globalN;
+		for(i=0;i<n;i++)
+			depthConstraints[depth][i]=0;
+		X[location]=1;
+		depthB[depth]=val;
+	}
+	void saveCostVector()
+	{
+		int i;
+		for(i=0;i<globalN;i++)
+			CostVector.Backup[i]=CostVector.A[i];
+	}
+
+
+bool checkY(int Y[N],int A[N],int B[N],int depth)
+{
+	int j;
+	for(j=0;j<depth;j++)
+	{
+		if(Y[A[j]]!=B[j]) return false;
+	}
+	return true;
+}
+
+void readFile(ifstream &Gfile,int G[N][M],int n,int k)
+{
+	int i,j,dump=0;
+	for (i=0;i<k;i++)
+		for(j=0;j<n;j++)
+		{
+			Gfile>>dump;
+			if((dump !=0) && (dump!=1))
+			{
+				j--;
+				break;
+			}
+			G[i][j]=dump;
+		}
+}
+
+void IHPerm(int pi)
+{
+	int i;
+	for(i=0;i<globalM;i++)
+		IPerm(pi,P.A[i]);
+}
+
+void multV(int A[N][M],int V[N],int res[N],int n,int k)
+{
+	int i,j=0,sum=0;
+	for (i=0;i<n;i++)
+	{
+		for(j=0;j<k;j++)
+			sum+=A[j][i]*V[j];
+		res[i]=sum%2;
+		sum=0;
+	}
+}
+
+int POWER(int x,int y)
+{
+	int i,ans;
+	ans=x;
+	if(y==0) return x;
+	for(i=0;i<y-1;i++)
+		ans=ans*x;
+	return ans;
+}
+
+bool adaptCV(int depth)
+{
+	ifstream Gfile(gMatrixFile.c_str());
+	string tmp=pwd+"Y1.txt";
+	ofstream outFile,backup;
+	outFile.open (tmp.c_str());
+	int ind=0,i=0,j=0,l=0,times=0;
+	int G[N][M],W[N],Y[N],A[N],B[N];
+	double num=0;
+	bool flag;
+	double Z[N];
+	for (i=0;i<depth;i++)
+		{
+			for(j=0;j<globalN;j++)
+			{
+				if (P.A[globalM+i][j]==1)
+				{
+					CostVector.A[j]=-1;
+					A[i]=j;
+					B[i]=P.B[globalM+i];
+					break;
+				}
+			}
+		}
+	readFile(Gfile,G,globalN,globalK);
+	while (1)
+	{
+		for(int v=0;v<globalK;v++)
+		{
+			W[v]=rand()%2;
+		}
+		multV(G,W,Y,globalN,globalK);
+		flag=checkY(Y,A,B,depth);
+		if(flag) break;
+		times++;
+		if(times>POWER(2,(depth+4))) return false;
+	}
+	for(j=0;j<globalN;j++)
+	{
+		CostVector.A[j]=1-2.0*Y[j];
+	}
+	return true;
+}
+
+	
+	void restoreCostVector()
+	{
+		int i;
+		for(i=0;i<globalN;i++)
+			CostVector.A[i]=CostVector.Backup[i];
+	}
+	int getGlobalN()
+	{
+		return P.rbase;
+	}
+	
+	bool checkSolution()
+		{
+		int i,j,k;
+		double tmp=0;
+		if (!globalNSAfirst) return true;
+		for(i=0;i<P.I;i++)
+		{
+			tmp=0;
+			for(j=0;j<2*globalN-globalK;j++)
+			{
+				tmp+=P.A[i][j]*solution[j];
+			}
+			switch(P.C[i])
+			{
+				case 0:
+				{ 
+					if(tmp>P.B[i]+EPS) return false;
+					break;
+				}
+				case 1:
+				{ 
+					if(!((tmp<P.B[i]+EPS) && (tmp>P.B[i]-EPS))) 
+					{
+						return false;
+					}
+					break;
+				}
+				case 2:
+				{ 
+					if(tmp<P.B[i]-EPS) return false;
+					break;
+				}
+			}
+		}
+		return true;
+	}
+	
+	bool frozen(int v)
+	{
+		int j;
+		for(j=0;j<globalK;j++)
+		{
+			if(globalFrozen[j]==v) return false;
+		}
+		return true;
+	}
+		/*
+		switch(code)
+		{
+			case 7:
+				{
+					return (!(v==63||v==62||v==61||v==55||v==47||v==59||v==31||v==60||v==51||v==54
+						||v==43||v==53||v==45||v==39||v==57||v==46||v==27||v==29||v==23||v==15
+						||v==30||v==58||v==49||v==50||v==52||v==41||v==42||v==44
+						||v==56||v==38||v==37||v==28));
+				}
+			case 8:
+				{
+					return (!(v==127||v==126||v==123||v==119||v==111||v==125||v==95||v==63||v==121||v==117||v==122||v==115||v==118||v==124||v==109||v==110||v==107||v==94||v==93||v==103||v==91||v==62||v==120||v==87||v==61||v==116||v==114||v==59||v==108||v==113||v==79||v==106||v==55||v==105||v==92||v==102||v==90||v==101||v==47||v==89||v==86||v==99||v==60||v==85||v==58||v==31||v==112||v==78||v==57||v==83||v==54||v==77||v==104||v==53||v==75||v==100||v==46||v==88||v==51||v==98||v==45||v==71||v==84||v==97));
+				}
+			case 9:
+				{
+					return (!((v>-1 && v<15)||(v>15 && v<23)||(v>31&&v<38)||v==24||v==25||v==40||v==48 ));
+				}
+		}
+		*/
+
+	void routes(int ind)
+	{
+		int i,j,step,hstep;
+		int logi=log10(1.0*globalN)/log10(2.0);
+		for(j=logi-1;j>0;j--)
+		{
+			step=(int)pow(2.0,logi-j);
+			hstep=step/2;
+			if(j==logi-1)
+			{
+				R[ind][j]=true;
+				R[ind][j-1]=true;
+				R[ind+1][j-1]=true;
+				continue;
+			}
+			for(i=0;i<globalN;i++)
+			{
+				if(!R[i][j]) continue;
+				R[i][j-1]=true;
+				if(pB[i][j])
+				{
+					R[i+hstep][j-1]=true;
+				}
+			}
+		}
+	}
+
+
+	void alter(bool B[N][N])
+	{
+		int i,j,step,hstep;
+		int logi=log10(1.0*globalN)/log10(2.0);
+		for(j=0;j<logi;j++)
+		{
+			for(i=0;i<globalN;i++)
+			{
+				step=2;//(int)pow(2.0,logi-j);
+				hstep=step/2;
+				if((1+(i%step))>(hstep))
+				{
+					B[i][j]=false;
+					continue;
+				}
+				else B[i][j]=true;
+			}
+		}
+	}
+
+	void writeEQ(int n)
+	{
+		int i;
+		for(i=0;i<n;i++)
+		{
+			if(P.C[i]==0)
+			{
+				outFile<<endl<<" L  R";
+				label(i);
+			}
+			else if (P.C[i]==1)
+			{
+				outFile<<endl<<" E  R";
+				label(i);
+			}
+			else 
+			{
+				outFile<<endl<<" G  R";
+				label(i);
+			}
+		}
+	}
+
+	void writeRHS(int n)
+	{
+		int i;
+		outFile<<endl<<"RHS";
+		for(i=0;i<n;i++)
+		{
+			outFile<<endl<<"    RHS       R";;label(i)<<"     "<<P.B[i];outFile<<".";
+		}
+	}
+
+	
+	
+		
+	void writeCost(int ind)
+	{
+		double cc=1-2.0*originalX[ind-SHIFT];
+		outFile<<endl<<"    X";label(f(ind));
+		if(cc<0) outFile<<"    COST       "; //first, treat the target function
+			else outFile<<"    COST        ";
+		outFile<<cc;
+	}
+	void writeAuxCost(CP *C)
+	{
+		return;
+		if(!C->leaf) return;
+		double cc=1-(2*(C->ref));
+		outFile<<endl<<"    X";label(C->serial);
+		if(cc<0) outFile<<"    COST       "; //first, treat the target function
+			else outFile<<"    COST        ";
+		outFile<<cc;
+	}
+
+		
+	void writeBounds(int n)
+	{
+		int j,v;
+		outFile<<endl<<"BOUNDS";
+		
+		for(j=0;j<SHIFT+globalN;j++)
+		{
+			if(!validX[j]) continue;
+			if(j<globalN && SHIFT!=0)
+			{
+				
+				if(!frozen(j))
+				{
+					outFile<<endl<<" UP    "<<"BND1      "<<"X";label(j)<<"                 1.";
+					outFile<<endl<<" LO    "<<"BND1      "<<"X";label(j)<<"                 0.";
+					continue;
+				}
+				outFile<<endl<<" UP    "<<"BND1      "<<"X";label(j)<<"                 0.";
+				outFile<<endl<<" LO    "<<"BND1      "<<"X";label(j)<<"                 0.";
+				continue;
+			}
+			if(LT1[j] || j>SHIFT-1)
+			{
+				outFile<<endl<<" UP    "<<"BND1      "<<"X";label(j)<<"                 1.";
+			}
+			outFile<<endl<<" LO    "<<"BND1      "<<"X";label(j)<<"                 0.";
+		}
+
+		for(j=0;j<globalZs;j++)
+		{
+			outFile<<endl<<" LO    "<<"BND1      "<<"Z";label(j)<<"                 0.";
+		}
+		outFile<<endl<<"ENDATA";
+		outFile.close(); 
+	}
+
+	void writeDynamicBounds(int n)
+	{
+		int j,v;
+		outFile<<endl<<"BOUNDS";
+		
+		for(j=0;j<globalX+globalN;j++)
+		{
+			if(0 || j>globalX-1)
+			{
+				outFile<<endl<<" UP "<<"BND1      "<<"X";label(j)<<"              1.";
+			}
+			outFile<<endl<<" LO "<<"BND1      "<<"X";label(j)<<"              0.";
+		}
+		for(j=0;j<globalZs;j++)
+		{
+			outFile<<endl<<" LO "<<"BND1      "<<"Z";label(j)<<"              0.";
+		}/*
+		for(j=globalZ;j<globalZ+globalM;j++)
+		{
+			outFile<<endl<<" LO    "<<"BND1      "<<"Z";label(j)<<"                 0.";
+		}*/
+		outFile<<endl<<"ENDATA";
+		outFile.close(); 
+	}
+
+	void addPolitopeConstraint(int A[bigN],int b,int c,bool flag=false) 
+	{
+		// X=vector of coeffs,b=scalar, c ={<....0 ,>....2,=....1} 
+		int i,j,x,y;
+		if(!flag)
+		{
+			for(j=0;j<SHIFT+globalN;j++)
+			{
+				XPT[rowNum][j]=A[j];
+				if(c==1 && A[j]!=0)
+				{
+					LT1[j]=true;
+				}
+			}
+		}
+		P.B[rowNum]=b;
+		P.C[rowNum]=c;
+		rowNum++;
+		if(flag) return;
+		for(j=0;j<SHIFT+globalN;j++) 
+		{
+			A[j]=0;
+		}
+	}
+	
+				
+//needs to sync ALL of the CGA1 new constraints
+	void syncCGA1()
+	{
+		int j;
+		for(j=0;j<globalN;j++)
+		{
+			comA[cga1Constraints][j]=X[j];
+		}
+		cga1Constraints++;
+	}
+
+	int f(int j)
+	{
+		return j;
+		if(j>SHIFT-1) return j-SHIFT;
+		return j+SHIFT;
+	}
+bool guiltyCGA1(int i)
+{
+	int x;
+	x=(int) solution[i+SHIFT+globalN];
+	if(fabs(solution[i+SHIFT+globalN]-x)>EPS)
+	{
+		return true; 	
+	}
+	return false;
+}
+bool Int(int i)
+{
+	int x;
+	x=(int) solution[i];
+	if(fabs(solution[i]-x)>EPS)
+	{
+		return false; 	
+	}
+	return true;
+}
+// now we have 2 define a comulative CGA1 matrix that each iteration of buildPolitope refers to during the process.
+	// if 2 sequantial rows are identical exit.
+	//define the SHIFT: dim-globalN
+	//check first what does cga1 do at mode=0 (integral x??)
+	/*
+	void addHConstraints()
+	{
+		int i,A[bigN],T[N],cnt,j;
+		for(j=0;j<SHIFT+globalN;j++)
+		{
+			A[j]=0;
+		}
+		flagRegConstraints=true;
+		for(i=0;i<globalM;i++)
+		{
+			for(j=0;j<globalN;j++)
+			{
+				A[SHIFT+j]=P.A[i][j];
+			}
+			addPolitopeConstraint(A,0,1);
+		}
+	}
+
+*/
+
+
+	void addPolitopeConstraints(int T[3],int cnt)
+	{
+		int A[bigN],pos,i,j,x,y,z;
+		for(j=0;j<SHIFT+globalN;j++)
+			A[j]=0;
+		if (cnt!=2 && cnt!=3) 
+		{
+			cout<<"ERR addPolitopeConstraints"<<endl;
+			return;
+		}
+		if(cnt==2)
+		{
+			x=T[0];y=T[1];
+			CNT[rowNum]=2;
+			A[x]=1;A[y]=-1;
+			addPolitopeConstraint(A,0,1);
+			noZ[rowNum]=true;
+			
+		}
+			/*
+			for(i=0;i<1;i++)
+			{
+				if(guiltyCGA1(gcga1) && (T[i]>SHIFT-1) && (T[i]<SHIFT+globalN))
+				{
+					if (!Int(T[i]) && (T[i]>SHIFT-1) && (T[i]<SHIFT+globalN)) polarCGA1(T[i]);
+					gcga1++;		
+				}
+			}
+			
+		}*/
+		else 
+		{
+			CNT[rowNum]=3;
+			x=T[0];y=T[1];z=T[2];
+			A[x]=1;A[y]=1;A[z]=-1;
+			CNT[rowNum]=3;
+			addPolitopeConstraint(A,0,2);
+			A[x]=1;A[y]=-1;A[z]=1;
+			CNT[rowNum]=3;
+			addPolitopeConstraint(A,0,2);
+			A[x]=-1;A[y]=1;A[z]=1;
+			CNT[rowNum]=3;
+			addPolitopeConstraint(A,0,2);
+			A[x]=1;A[y]=1;A[z]=1;
+			CNT[rowNum]=3;
+			addPolitopeConstraint(A,2,0);
+		}
+	}
+	
+	bool sameCGA1()
+	{
+		int j;
+		if(cga1Constraints<2) return false;
+		for(j=0;j<globalN;j++)
+		{
+			if(comA[cga1constraints-1][j]!=comA[cga1constraints-2][j]) return false;
+		}
+		return true;
+	}
+			
+void countValidX()
+{
+	int j;
+	globalVars=-globalN;
+	for(j=0;j<SHIFT+globalN;j++)
+		if (validX[j]) globalVars++;
+}
+
+void	printB()
+	{
+		int i,j;
+		for(i=0;i<globalN;i++)
+		{
+			for(j=0;j<6;j++)
+			{
+				cout<<pB[i][j]<<" ";
+			}
+			cout<<endl;
+		}
+	}
+
+void	printR()
+	{
+		int i,j;
+		for(i=0;i<globalN;i++)
+		{
+			for(j=0;j<6;j++)
+			{
+				cout<<R[i][j]<<" ";
+			}
+			cout<<endl;
+		}
+	}
+	void writeXPT(int dim)
+	{
+		int i,j,perd,frozenSum=0;
+		Zs=0;
+		outFile<<endl<<"COLUMNS";
+		for (j=0;j<SHIFT+globalN;j++)
+		{
+			if(j>SHIFT-1) writeCost(j);
+			for (i=0;i<finalrowNum;i++)
+			{
+				if(i==960)
+				{
+					i=i;
+				}
+				if(!XPT[i][j]) continue;
+				outFile<<endl<<"    X";label(j);outFile<<"    R";label(i);
+				outFile<<"                 ";outFile<<XPT[i][j];outFile<<".";
+				validX[j]=true;
+			}
+		}
+		for (i=0;i<SHIFT;i++)
+		{
+			if(P.C[i]==1 && !noZ[i])
+			{
+				outFile<<endl<<"    Z";label(Zs);outFile<<"    R";label(i);
+				outFile<<"                 ";outFile<<-2;outFile<<".";
+				Zs++;
+			}
+			//if(Zs==globalM) break;
+		}
+		globalZs=Zs;
+
+	}
+
+	void writeGlpkDynamicXPT()
+	{
+		int i,j,perd,frozenSum=0,GI=finalrowNum,GJ=0;
+		int ind,ia[IA], ja[IA],dimA=(GI)*(globalX+globalN);
+	    double ar[IA], z, x1, x2,GB[bigN];
+		ostringstream str;
+		SHIFT=globalX;
+		glp_delete_prob(P1);
+	    P1=glp_create_prob();
+	    glp_set_prob_name(P1, "GLPK");
+	    glp_set_obj_dir(P1, GLP_MAX);
+	    /* fill problem */
+	    glp_add_rows(P1, finalrowNum);
+		for (i=0;i<finalrowNum;i++)
+		{
+			if(P.C[i]==1 && putZ[i])
+			{
+				globalZs++;
+			}
+			//if(Zs==globalM) break;
+		}
+		GJ=globalN+globalX+globalZs;
+		for (j=0;j<globalX+globalN;j++)
+		{
+
+			for (i=0;i<finalrowNum;i++)
+			{
+				if(!XPT[i][j]) continue;
+				validX[j]=true;
+			}
+		}
+		glp_add_cols(P1, GJ);
+	    for(j=0;j<globalX;j++) //Xs
+	    {
+		   str.str("");str.clear();
+		   str<<"X"<<j;
+		   glp_set_col_name(P1, j+1, str.str().c_str());
+		   glp_set_col_bnds(P1, j+1, GLP_LO,0,DBL_MAX); 
+	    }
+		for(j=globalX;j<globalX+globalN;j++) //Xs
+	    {
+		   str.str("");str.clear();
+		   str<<"X"<<j;
+		   glp_set_col_name(P1, j+1, str.str().c_str());
+		   glp_set_col_bnds(P1, j+1, GLP_DB,0,1); 
+	    }
+	    //glp_write_lp(P1, NULL, "C:\\MyProj\\CFG5\\proxy1.txt");
+	    for(j=globalX+globalN;j<GJ;j++) //Zs
+	    {
+	       str.str("");str.clear();
+		   str<<"Z"<<(j-(globalX+globalN));
+		   glp_set_col_name(P1, j+1, str.str().c_str());
+		   glp_set_col_bnds(P1, j+1, GLP_LO,0,DBL_MAX);
+		   //glp_write_lp(P1, NULL, "C:\\MyProj\\CFG5\\proxy1.txt");
+	    }
+		for (i=0;i<finalrowNum;i++)
+		{
+			str.str("");str.clear();
+		    str<<"R"<<i;
+		    glp_set_row_name(P1, i+1,  str.str().c_str());
+		    switch (P.C[i])
+		    {
+			   case 0: {glp_set_row_bnds(P1, i+1, GLP_UP, 0.0, P.B[i]);break;}
+			   case 1: {glp_set_row_bnds(P1, i+1, GLP_FX, P.B[i], P.B[i]);break;}
+			   case 2: {glp_set_row_bnds(P1, i+1, GLP_LO,P.B[i] , 0.0);break;}
+		    }
+		}
+			
+		for(j=0;j<globalN;j++)//target function
+	    {
+			glp_set_obj_coef(P1,globalX+j+1, (-1)*(1-2.0*originalX[j]));	  //(-1) becuase of the Maximize (GLPK)
+	    }
+		ar[0]=0;
+		ind=0;
+		for(i=0;i<GI;i++)
+		  for(j=0;j<(globalX+globalN);j++)
+		  {
+			  ind++;
+			  ia[ind]=i+1; ja[ind]=j+1; ar[ind]=XPT[i][j];
+		  }
+	    for(i=0;i<globalZs;i++)
+		{
+			ind++;
+			ia[ind]=i+1;ja[ind]=globalX+globalN+i+1;ar[ind]=-2;
+		}
+		dimA=ind;
+		glp_load_matrix(P1, dimA, ia, ja, ar);
+		glp_write_mps(P1,GLP_MPS_FILE,NULL,"C:\\MyProj\\CFG5\\proxy3.txt");
+		glp_write_lp(P1, NULL, "C:\\MyProj\\CFG5\\proxy4.txt");
+		glp_write_mps(P1,GLP_MPS_FILE,NULL,"C:\\MyProj\\CFG5\\proxy6.txt");
+	    globalZs=Zs;
+
+	}
+
+
+void writeDynamicXPT()
+	{
+		if(glpkLoaded) 
+		{
+			writeGlpkDynamicXPT();
+			return;
+		}
+		int i,j,perd,frozenSum=0;
+		Zs=0;
+		outFile<<endl<<"COLUMNS";
+		SHIFT=globalX;
+		for (j=0;j<globalX+globalN;j++)
+		{
+			if(j>globalX-1) writeCost(j);
+			//else writeAuxCost(globalPT[j]);
+			for (i=0;i<finalrowNum;i++)
+			{
+				if(!XPT[i][j]) continue;
+				outFile<<endl<<"    X";label(j);outFile<<"    R";label(i);
+				if(XPT[i][j]>0) outFile<<" ";
+					outFile<<"             ";
+				outFile<<XPT[i][j];outFile<<".";
+				validX[j]=true;
+			}
+		}
+		for (i=0;i<finalrowNum;i++)
+		{
+			if(P.C[i]==1 && putZ[i])
+			{
+				outFile<<endl<<"    Z";label(Zs);outFile<<"    R";label(i);
+				outFile<<"                   ";outFile<<-2;outFile<<".";
+				Zs++;
+			}
+			//if(Zs==globalM) break;
+		}
+		globalZs=Zs;
+		glp_write_mps(P1,GLP_MPS_FILE,NULL,"C:\\MyProj\\CFG5\\proxy7.txt");
+
+	}
+	void writeParity()
+	{
+		int sum,i,j;
+		for(i=0;i<globalM;i++)
+		{
+			sum=0;
+			for(j=0;j<globalN;j++)
+			{
+				if(P.A[i][j]) sum++;
+			}
+			EVEN[i]=sum;
+		}
+	}
+	
+	void buildZ(int cols)
+	{
+		int i,j;
+		for(i=0;i<globalN;i++)
+		{
+			for(j=0;j<cols;j++)
+			{
+				if(!Int(SHIFT+globalN+j*globalN+i)) 
+				{
+					Z[i][j]=true;
+				}
+				else Z[i][j]=false;
+			}
+		}
+	}
+
+	void addOriginalConstraints()
+	{
+		int k,i,j;
+		for(k=finalrowNum;k<finalrowNum+globalM;k++)
+		{
+			i=k-finalrowNum;
+			for(j=0;j<globalX+globalN;j++)
+			{
+				XPT[k][j]=0;
+			}
+			for(j=0;j<globalN;j++)
+			{
+				XPT[k][globalX+j]=P.Ares[i][j]==1;
+			}
+			P.B[k]=0;
+			P.C[k]=1;
+		}
+		finalrowNum+=globalM;
+	}
+
+	void addDynamicSideConstraints(int depth)
+	{
+		int i,j,x,cnt,A[3];
+		for(i=0;i<finalrowNum;i++)
+		{
+			//if(Int(SHIFT+globalN+i)) continue;
+			x=(int) solution[globalX+globalN+i];
+			//if(fabs(solution[globalX+globalN+i]-x)<EPS) continue;
+			cnt=0;
+			for(j=0;j<3;j++)
+			{
+				A[j]=-1;
+			}
+			for(j=0;j<globalX+globalN;j++)
+			{
+				if(XPT[i][j]!=0)
+				{
+					A[cnt]=j;
+					cnt++;
+				}
+				if(cnt==3) break;
+			}
+			if(A[1]>SHIFT-1 && A[2]>SHIFT-1 && (abs(originalX[A[1]-SHIFT]-0.5)<thres || abs(originalX[A[2]-SHIFT]-0.5)<thres) )
+			{
+				globalBL[A[0]]=true;
+				continue;
+			}
+			if(globalBL[A[0]] || globalBL[A[1]] || globalBL[A[2]])
+			{
+				globalBL[A[0]]=true;globalBL[A[1]]=true;globalBL[A[2]]=true;
+				continue;
+			}
+			addPolitopeConstraints(A,cnt);
+		}
+	}
+	
+	void addSideConstraints()
+	{
+		int i,j,cnt,A[3];
+		for(i=0;i<SHIFT;i++)
+		{
+			//if(Int(SHIFT+globalN+i)) continue;
+			cnt=0;
+			for(j=0;j<3;j++)
+			{
+				A[j]=-1;
+			}
+			for(j=0;j<SHIFT+globalN;j++)
+			{
+				if(XPT[i][j]!=0)
+				{
+					A[cnt]=j;
+					cnt++;
+				}
+			}
+			addPolitopeConstraints(A,cnt);
+		}
+	}
+	
+void zeroDegrees()
+{
+	int i,j;
+	for(i=0;i<M;i++)
+	{
+		for(j=0;j<N;j++)
+		{
+			Degrees[i][j]=0;
+		}
+	}
+}
+	
+void trueLT1()
+{
+	int i;
+	for(i=0;i<bigN;i++)
+	{
+		LT1[i]=false;
+	}
+}
+
+void genWeakNodes()
+{
+	int i,j;
+	double tmp[N];
+	double max;
+	int min;
+	for(j=0;j<globalN;j++)
+		WeakNodes[j]=false;
+	for(j=0;j<globalN;j++)
+	{
+		tmp[j]=abs(originalX[j]-0.5);
+	}
+	for(i=0;i<globalM;i++)
+	{
+		max=100;
+		for(j=0;j<globalN;j++)
+		{
+			if(tmp[j]<max)
+			{
+				min=j;
+				max=tmp[j];
+			}
+		}
+		WeakNodes[min]=true;
+		tmp[min]=100;
+	}
+}
+
+
+
+void genAres()
+{
+	genWeakNodes();
+	ConstructH();
+}
+
+void cloneHmat()
+{
+	int i,j;
+	for(i=0;i<globalN;i++)
+		for(j=0;j<globalM;j++)
+			P.A[i][j]=P.Ares[i][j];
+}
+void swapDynamic(int i1,int i2)
+{
+	int i,j,k,tmp[N];
+	for(j=0;j<globalN;j++)
+		{
+			tmp[j]=P.A[i1][j];
+			P.A[i1][j]=P.A[i2][j];
+			P.A[i2][j]=tmp[j];
+		}
+}
+
+bool balancedH()
+{
+	int i,j;
+	bool A[N];
+	double cnt=0;
+	for(j=0;j<globalN;j++)
+		A[j]=false;
+	for(i=0;i<globalM;i++)
+	{
+		for(j=0;j<globalN;j++)
+		{
+			if(P.A[i][j]) A[j]=true;
+		}
+	}
+	for(j=0;j<globalN;j++)
+	{
+		if(A[j]) cnt++;
+	}
+	if(cnt>0.85*globalN)
+	{
+		return true;
+	}
+	return false;
+}
+
+bool belongs2Weaks(int x)
+{
+	int i;
+	for(i=0;i<globalN;i++)
+	{
+		if(localWeaks[i]==x)return true;
+		if(localWeaks[i]==-1) return false;
+	}
+	return false;
+}
+int newWeaks(int candidate,int dim,int active)
+{
+	int res=0,i,j;
+	bool flag;
+	for(j=0;j<globalN;j++)
+	{
+		if(P.A[candidate][j]==0) continue;
+		if(fabs(originalX[j]-0.5)>globalSafeZone) continue;
+		if(belongs2Weaks(j)) continue;
+		res++;
+		localWeaks[dim]=j;
+		dim++;
+	}
+	if(!active) 
+	{
+		for(j=0;j<res;j++)
+		{
+			dim--;
+			localWeaks[dim]=-1;
+		}
+		return res;
+	}
+	return dim;
+
+}
+
+
+
+int newInfo(int candidate,int final)
+{
+	int res=0,i,j;
+	bool flag;
+	for(j=0;j<globalN;j++)
+	{
+		flag=false;
+		for(i=0;i<final;i++)
+		{
+			if(P.A[candidate][j] && !P.A[i][j]) 
+			{
+				flag=true;
+				break;
+			}
+		}
+		if(flag) res++;
+	}
+	return res;
+}
+
+void sortByOriginalX(int Keys[N])
+{
+	int i,j,ind;
+	double min=100,tmp[N];
+	for(j=0;j<globalN;j++)
+		tmp[j]=originalX[j];
+	for(i=0;i<globalN;i++)
+	{
+		for(j=0;j<globalN;j++)
+		{
+			if(fabs(tmp[j]-0.5)<min)
+			{
+				min=fabs(tmp[j]-0.5);
+				ind=j;
+			}
+		}
+		Keys[globalN-i-1]=ind;
+		tmp[ind]=100000;
+		min=100000;
+	}
+}
+
+void setGrades(int Keys[N],int Grades[N])
+{
+	int i,j;
+	int ref=Keys[globalN-1-globalLim];
+	for(i=0;i<globalM;i++)
+	{
+		Grades[i]=0;
+		for(j=0;j<globalN;j++)
+		{
+			if(P.A[i][j]==0)continue;
+			if(j==ref) continue;
+			Grades[i]+=Keys[j];
+		}
+	}
+}
+
+void sortRowsByGrades(int A[N],int Grades[N])
+{
+	int i,k,min=1000000,ind;
+	for(k=0;k<globalM;k++)
+	{
+		min=1000000;
+		for(i=0;i<globalM;i++)
+		{
+			if(Grades[i]<min)
+			{
+				min=Grades[i];
+				ind=i;
+			}
+		}
+		Grades[ind]=1000000;
+		A[k]=ind;
+	}
+}
+
+bool doubleA(int A[N],int dim)
+{
+	int i,j;
+	for(j=0;j<dim-1;j++)
+	{
+		if(A[dim-1]==A[j]) return true;
+	}
+	return false;
+}
+
+void addAfterAdaptation()
+{
+	int i,j;
+	for(i=1;i<globalM;i++)
+	{
+		addRows(i,0,globalN,0);
+	}
+	for(i=0;i<globalM;i++)
+		for(j=0;j<globalN;j++)
+			P.A[i][j]=P.Ares[i][j];
+}
+
+void randomPerm41bit()
+{
+	int i,j,A[N],rows=globalM-globalR;
+	for(i=0;i<rows;i++)
+	{
+		A[i]=-1;
+	}
+	j=0;
+	while(1)
+	{
+		A[j]=rand()%globalM;
+		if(!doubleA(A,j+1))j++;
+		if(j==rows) break;
+	}
+	for(i=0;i<rows;i++)
+	{
+		swapDynamic(i,A[i]);
+	}
+}
+
+
+
+int minWeaks()
+{
+	int i,j,newNodes=0,nextInd,minNew,k,tmpNew,dim=0,corrected=0;
+	int Keys[N],Grades[N],A[N];
+	bool first=true,second=true;
+	for(j=dim;j<globalN;j++) localWeaks[j]=-1;
+	sortByOriginalX(Keys);
+	for(j=0;j<globalN/2;j++)
+	{
+		localWeaks[j]=Keys[globalN-1-globalLim-j];
+	}
+	setGrades(Keys,Grades);
+	sortRowsByGrades(A,Grades);
+	//randomPerm41bit();
+	
+	for(i=0;i<globalM-globalR;i++)
+	{
+		swapDynamic(i,A[i]);
+		/*
+		minNew=20;
+		for(k=i;k<globalM;k++)
+		{
+			tmpNew=newWeaks(k,dim,0);
+			if(tmpNew<minNew )
+			{
+				if(tmpNew==0 && corrected==0) continue;
+				minNew=tmpNew;
+				nextInd=k;
+			}
+		}
+		if(tmpNew==0 && first) return -1;
+		newWeaks(nextInd,dim,1);
+		dim+=minNew;
+		swapDynamic(i,nextInd);
+		corrected+=minNew;
+		if(corrected>globalMaxCorrected && corrected-minNew>globalMaxCorrected && minNew>0)
+		{
+			globalR=globalM-i+1;
+			return -1;
+		}
+*/
+	}
+	return -1;
+}
+
+
+
+int maxSpan()
+{
+	int i,j,newNodes=0,nextInd,maxNew,k,tmpNew;
+	k=rand()%globalM;
+	swapDynamic(0,k);	
+	for(i=1;i<globalM;i++)
+	{
+		maxNew=-1;
+		for(k=i;k<globalM;k++)
+		{
+			tmpNew=newInfo(k,i);
+			if(tmpNew>maxNew)
+			{
+				maxNew=tmpNew;
+				nextInd=k;
+			}
+		}
+		if(maxNew==0) return i;
+		swapDynamic(i,nextInd);
+	}
+	return i;
+}
+
+void permute1bitDecoder()
+{
+	int lim,i,j,i1,i2,k,tmp[N];
+	for(k=0;k<500;k++)
+	{
+		i1=rand()%(globalM-globalR);i2=rand()%(globalM-globalR);
+		if (i1==i2) continue;
+		swapDynamic(i1,i2);
+		//if(balancedH()) break;
+	}
+	saveDynamicPermutation();
+}
+
+void permuteH4DyanmicPolitope()
+{
+	int lim,i,j,i1,i2,k,tmp[N];
+	lim=maxSpan();
+	for(k=0;k<500;k++)
+	{
+		i1=rand()%globalM;i2=rand()%globalM;
+		if(i1<lim || i2<lim) continue;
+		swapDynamic(i1,i2);
+		//if(balancedH()) break;
+	}
+	saveDynamicPermutation();
+}
+
+void calculatePrice(double Price[N])
+{
+	int i,j;
+	for(i=0;i<globalM;i++)
+	{
+		Price[i]=0;
+		for(j=0;j<globalN;j++)
+		{
+			if(P.A[i][j]==0) continue;
+			Price[i]+=abs(originalX[j]-0.5);
+		}
+	}
+}
+
+void dynamicSort(double Price[N],int A[N])
+{
+	int i,j;
+	double min=10000;
+	for(i=0;i<globalM;i++)
+	{
+		min=10000;
+		for(j=0;j<globalM;j++)
+		{
+			if(Price[j]<min)
+			{
+				A[i]=j;
+				min=Price[j];
+			}
+		}
+		Price[A[i]]=10000;
+	}
+}
+
+
+
+void orginizeByInput()
+{
+	int i,j,Ind[N],i1,i2;
+	double Price[N],PC[N];
+	//calculatePrice(Price);
+	/*
+	for(j=0;j<globalM;j++)
+	{
+		PC[j]=Price[j];
+	}
+	dynamicSort(Price,Ind);
+	*/
+	swapDynamic(1,10);
+	swapDynamic(2,15);
+	swapDynamic(3,20);
+	swapDynamic(4,25);
+	swapDynamic(5,29);/*
+	for(i=0;i<globalR;i++)
+	{
+		swapDynamic(i,Ind[i]);
+	}*/
+	for(i=0;i<500;i++)
+	{
+		i1=(rand()%globalM-6)+6;
+		i2=(rand()%globalM-6)+6;
+		if(i1==i2) continue;
+		if(i1>globalM-1 ||i2>globalM-1) continue;
+		//swapDynamic(i1,i2);
+	}
+}
+
+void saveDynamicPermutation()
+{
+	int i,j;
+	for(i=0;i<globalM;i++)
+	{
+		for(j=0;j<globalN;j++)
+		{
+			HBackup[i][j]=P.A[i][j];
+		}
+	}
+}
+
+void loadDynamicPermutation()
+{
+	int i,j;
+	for(i=0;i<globalM;i++)
+	{
+		for(j=0;j<globalN;j++)
+		{
+			P.A[i][j]=HBackup[i][j];
+		}
+	}
+}
+
+
+int buildDynamicPolitope(int input)
+	{
+		int ind,cnt,i,j,step,dim,iter;
+		string str=pwd+"proxy.txt";
+		int A[N],T[N],V[bigN],pos,x,y,z;
+		bool added=false,needs2break=false;
+		for(j=0;j<medN;j++)
+		{
+			globalOcc[j]=0;
+		}
+		gcga1=0;	
+		globalZ=0;
+		localWriteFlag=0;
+		outFile.open (str.c_str());
+		outFile<<"NAME          Proxy";
+		outFile<<endl<<"ROWS"<<endl<<" N  COST";
+		if(input==0)
+		{
+			for(i=0;i<bigN;i++)
+			{
+				validX[i]=false;
+				noZ[i]=false;
+				V[i]=0;
+				putZ[i]=true;
+				globalBL[i]=false;
+			}
+			globalX=0;
+			zeroXPT();
+			zeroDegrees();
+						
+			if(globalTot%100==0)
+			{
+				/*
+				genAres();
+				cloneHmat();
+				adaptHMatrix();
+				print2fileHH();*/
+			}
+			for(i=0;i<globalM-globalR;i++)
+			globalTerminatePT[i]=false;
+			genDynamicCP(0);
+			SHIFT=globalX;
+			//setDuplicates();
+			genDynamicXPT();
+			finalrowNum=rowNum;
+		}
+		addDynamicSideConstraints(input);
+		addDynamicResidue();
+		finalrowNum=rowNum;
+		//addOriginalConstraints();
+		//printG();
+		//printH();
+		//printXPT();
+		if(!glpkLoaded)
+		{
+			writeEQ(finalrowNum);
+			writeDynamicXPT();
+			firstPT=false;
+			writeRHS(finalrowNum);
+		}
+		if(glpkLoaded)writeDynamicXPT();
+		firstPT=false;
+		if(!glpkLoaded)writeDynamicBounds(SHIFT+globalN);
+		return SHIFT;
+	}
+	
+
+	int buildPolitope(double globalSNR)
+	{
+		string tmp_str=pwd+"proxy.txt";
+		int ind,cnt,i,j,step,dim,iter;
+		int A[N],T[N],V[bigN],pos,x,y,z;
+		int logi=log10(1.0*globalN)/log10(2.0);
+		bool added=false,needs2break=false;
+		gcga1=0;
+		for(i=0;i<globalN;i++)
+		{
+			for(j=0;j<logi;j++)
+			{
+				R[i][j]=false;
+			}
+		}
+		
+		for(i=0;i<bigN;i++)
+		{
+			validX[i]=false;
+			noZ[i]=false;
+			V[i]=0;
+		}
+		dim=globalN*(1+logi);
+		if(mode==4)SHIFT=dim-globalN;
+		localWriteFlag=0;
+		outFile.open (tmp_str.c_str());
+		outFile.setf( std::ios::fixed, std:: ios::floatfield );
+		outFile.precision(8);
+		outFile<<"NAME          Proxy";
+		outFile<<endl<<"ROWS"<<endl<<" N  COST";
+		addSideConstraints();
+		finalrowNum=rowNum;
+		writeEQ(finalrowNum);
+		writeXPT(SHIFT+globalN);
+		if(!firstPT) countValidX();
+		firstPT=false;
+		writeRHS(finalrowNum);
+		writeBounds(SHIFT+globalN);
+		return SHIFT;
+	}
+	bool integralPolar()
+	{
+		int k,x;
+		bool res=true;
+		for(k=0;k<globalN+globalZs;k++)
+		{
+			globalDW[k]=0;
+			x=(int) solution[SHIFT+globalVars+k];
+			if(fabs(solution[SHIFT+globalVars+k]-x)>EPS) 
+			{
+				res=false;
+				globalDW[k]=fabs(solution[SHIFT+globalVars+k]-0.5);
+			}
+		}
+		return res;
+	}
+	
+
+	void reset4PT()
+	{
+		reset();
+		CostVector.reset();
+	}
+
+bool sameSolution(int dim)
+	{
+		int j;
+		for(j=0;j<SHIFT+globalN+globalZs;j++)
+		{
+			if(solution[j]!=lastSolution[j])
+			{
+				return false;
+			}
+		}
+		return true;
+	}
+
+	void frozenPerm()
+	{
+		if(globalN%2!=0) return;
+		int i,step=globalN/2;
+		for(i=0;i<globalN;i++)
+		{
+			FP[i]=i;
+		}
+		if(noPerms) return;
+		for(i=1;i<step;i=i+2)
+		{
+			FP[i]=step+i-1;
+		}
+		for(i=step;i<globalN;i=i+2)
+		{
+			FP[i]=i-step+1;
+		}
+	}
+
+	void genXPT()
+	{
+		int x,y,z,i,j,ind,step=0;
+		int logi=log10(1.0*globalN)/log10(2.0);
+		int A[3];
+		for(ind=globalN;ind<SHIFT+globalN;ind++)
+		{
+			j=(ind-globalN)/globalN;
+			i=ind-globalN*(j+1);
+			A[0]=ind-globalN;
+			A[1]=ind;
+			x=globalB1[i][j];y=globalB2[i][j];
+			XPT[ind-globalN][ind]=1;XPT[ind-globalN][x]=1;
+			if(!pB[i][j])
+			{
+				continue;
+			}
+			XPT[ind-globalN][y]=1;
+		}
+	}
+
+
+	void readFrozen(ifstream &Gfile)
+	{
+		int i,j,dump=0;
+		for(j=0;j<globalK;j++)
+		{
+			Gfile>>dump;
+			globalFrozen[j]=dump;
+		}
+	}
+
+
+	void polarPerm()
+	{
+		int i,j,k;
+		int TMP[N];
+		for(i=0;i<globalN;i++)
+		{
+			for(j=0;j<globalN;j++)
+				TMP[j]=XPT[i][j];
+			for(j=0;j<globalN;j++)
+			{
+				k=FP[j];
+				XPT[i][j]=TMP[k];
+			}
+		}
+	}
+	
+	double MIN(double x,double y)
+	{
+		if(x<y) return x;
+		else return y;
+	}
+	double CalcSig(double sig1,double sig2)
+	{
+		return MIN(sig1,sig2);
+	}
+
+
+
+
+
+	void addDynamicSuffix(int s1,int s2,int s3,int row)
+	{
+		XPT[row][s1]=1;
+		XPT[row][s2]=1;
+		XPT[row][s3]=1;
+	}
+
+
+	void addDynamicXPT(int ind,int row)
+	{
+		int x,y,z;
+		z=-1;
+		CP tmp=(*globalPT[ind]);
+		if(tmp.children==2)
+		{
+			z=tmp.child1;
+			if(tmp.leaf)
+				z+=globalX;
+		}
+		x=tmp.child2;
+		if(tmp.leaf)
+		{
+				x+=globalX;
+		}
+		y=tmp.serial;
+		if((x<0 ||x>globalX+globalN) || (y<0 ||y>globalX+globalN)|| (x==y))
+		{
+			row=row;
+		}
+		XPT[row][x]=1;
+		XPT[row][y]=1;
+		if(z!=-1) XPT[row][z]=1;
+	}
+
+	void addDynamicResidue()
+	{
+		return;
+		int i,k,j,A[bigN];
+		for(k=0;k<SHIFT;k++)
+			{
+				A[k]=0;
+			}
+
+
+		for(i=globalM-globalR;i<globalM;i++)
+		{
+			for(j=SHIFT;j<SHIFT+globalN;j++)
+			{
+				A[j]=P.A[i][j-SHIFT];
+			}
+			addPolitopeConstraint(A,0,1);
+		}
+	}
+				
+	void genDynamicXPT()
+	{
+		int j,row,i,h;
+		int A[3];
+		int base,k=0;
+		row=0;
+		for(i=0;i<globalX;i++)
+		{
+			addDynamicXPT(i,row);
+			row++;
+		}
+		for(i=0;i<globalM-globalR;i++)
+		{
+			k=0;
+			base=0;
+			while(Degrees[i][k]!=-1)
+			{
+				for(j=0;j<Degrees[i][k];j++)
+				{
+				
+					base++;
+				}
+				k++;
+			}
+			for(h=0;h<3;h++)
+			{
+				A[h]=globalCP[i][base-3+h].serial;/*
+				if(globalCP[i][base-3+h].leaf)
+				{
+					A[h]+=globalX;
+				}*/
+			}
+			addDynamicSuffix(A[0],A[1],A[2],row);
+			row++;
+		}
+		for(i=0;i<row;i++)
+		{
+			P.B[i]=0;
+			P.C[i]=1;
+		}
+		rowNum=row;
+		globalZ=row;
+	}
+	void zeroXPT()
+	{
+		int i,j;
+		for(i=0;i<bigN;i++)
+			for(j=0;j<M;j++)
+				XPT[i][j]=0;
+		for(i=0;i<bigN;i++)
+		{
+			P.B[i]=0;
+			P.C[i]=0;
+		}
+	}
+
+	    
+	int sortRowByFeedback(int i,int Keys[bigN])
+	{
+		int j,k,tmp,ones=0,weaks=0;
+		double min=10;
+		double Cost[N],globalDWC[N];
+		for(j=0;j<globalN;j++)
+		{
+			globalDWC[j]=globalDW[j];
+			Cost[j]=abs(originalX[j]-0.5);
+			if(P.A[i][j]==1) ones++;
+			if(P.A[i][j]==1 && globalDWC[j]!=0) weaks++;
+		}
+		weaks=weaks/2;
+		for(k=0;k<weaks;k++)
+		{
+			for(j=0;j<globalN;j++)
+			{
+				if(P.A[i][j]!=1 || globalDWC[j]==0) continue;
+				if(globalDWC[j]<min)
+				{
+					min=globalDWC[j];
+					tmp=j;
+				}
+			}
+			globalDWC[tmp]=10;
+			Cost[tmp]=10;
+			Keys[k]=tmp;
+			min=10;
+		}
+		
+		for(k=weaks;k<ones;k++)
+		{
+			for(j=0;j<globalN;j++)
+			{
+				if(P.A[i][j]!=1) continue;
+				if(Cost[j]<min)
+				{
+					min=Cost[j];
+					tmp=j;
+				}
+			}
+			Cost[tmp]=10;
+			Keys[k]=tmp;
+			/*
+			if(k%2==0) 
+			{
+				Keys[k/2]=tmp;
+			}
+			else
+			{
+				Keys[ones-(k+1)/2]=tmp;
+			}*/
+			min=10;
+		}
+		return ones;
+	}
+
+	int sortRowBySignificance(int i,int Keys[bigN])
+	{
+		int j,k,tmp,ones=0;
+		double min=10;
+		double Cost[N];
+		for(j=0;j<globalN;j++)
+		{
+			Cost[j]=abs(originalX[j]-0.5);
+			if(P.A[i][j]==1) ones++;
+		}
+		for(k=0;k<ones;k++)
+		{
+			for(j=0;j<globalN;j++)
+			{
+				if(P.A[i][j]!=1) continue;
+				if(Cost[j]<min)
+				{
+					min=Cost[j];
+					tmp=j;
+				}
+			}
+			Cost[tmp]=10;
+			Keys[k]=tmp;
+			/*
+			if(k%2==0) 
+			{
+				Keys[k/2]=tmp;
+			}
+			else
+			{
+				Keys[ones-(k+1)/2]=tmp;
+			}*/
+			min=10;
+		}
+		return ones;
+	}
+
+	void sortBySignificance(int order,int i,int Keys[bigN])
+	{
+		int head,tail,j,tmp,ones,k,h,base;
+		double min=10;
+		double Cost[N];
+		int lim=Degrees[i][order-1];
+		head=0;
+		for(k=0;k<order-1;k++)
+			head+=Degrees[i][k];
+		tail=head+Degrees[i][order-1];
+		for(j=head;j<tail;j++)
+		{
+			Keys[j-head]=globalCP[i][j].serial;
+		}
+		/*
+		base=globalCP[i][head].serial;
+		for(h=0;h<Degrees[i][order-1];h++)
+		{
+			for(j=0;j<lim;j++) //coninue from here.. ranges...
+			{
+				if(Cost[j]<min)
+				{
+					min=Cost[j];
+					tmp=j;
+				}
+			}
+			Cost[tmp]=10;
+			Keys[h]=tmp+base;
+			min=10;
+		}*/
+	}
+
+	void setDuplicates()
+	{
+		int i,j,k,l,tmp;
+		bool flag;
+		int A[bigN];
+		globalX=0;
+		for(k=0;k<bigN;k++)
+			A[k]=0;
+		for(i=0;i<SHIFT;i++)
+		{
+			for(j=0;j<i;j++)
+			{
+				if((*globalPT[i])==(*globalPT[j]))
+					flag=false;
+			}
+			if(flag)
+			{
+				(*globalPT[i]).setValid();
+				globalX++;
+			}
+			flag=true;
+			if(globalPT[i]->children==1) LT1[globalPT[i]->serial]=true;
+		}
+
+	}
+
+	void printG()
+	{	
+		int i,j;
+		cout<<"printG";
+		for(i=0;i<globalK;i++)
+		{
+			for(j=0;j<globalN;j++)
+			{
+				cout<<G[i][j]<<" ";
+			}
+			cout<<endl;
+		}
+	}
+
+	void printH()
+	{	
+		int i,j;
+		return;
+		cout<<endl<<endl;
+		for(i=0;i<globalM;i++)
+		{
+			for(j=0;j<globalN;j++)
+			{
+				cout<<P.A[i][j]<<" ";
+			}
+			cout<<endl;
+		}
+	}
+	void printXPT()
+	{
+		int i,j;
+		cout<<endl<<"**"<<endl;
+		for(j=0;j<globalX+globalN+globalK;j++)
+		{
+			cout<<j;
+			if(j<10) cout<<" ";
+		}
+		cout<<endl;
+		for(i=0;i<finalrowNum;i++)
+		{
+			for(j=0;j<globalX+globalN+globalK;j++)
+			{
+				if(XPT[i][j+1]!=-1)
+				{
+					cout<<XPT[i][j]<<" ";
+				}
+				else
+				{
+					cout<<XPT[i][j];
+				}
+			}
+			cout<<" "<<P.B[i]<<" "<<P.C[i];
+			cout<<endl;
+		}
+	}
+	int belongs(int x,int A[N],int size)
+	{
+		int i;
+		for(i=0;i<size;i++)
+		{
+			if(A[i]==x) return i;
+		}
+		return -1;
+	}
+
+	void addRowsH(int i1,int i2) //G[i1]+=G[i2]
+{
+	int j;
+	for(j=0;j<globalN;j++)
+	{
+		P.A[i1][j]=(P.A[i1][j]+P.A[i2][j])%2;
+	}
+}
+
+bool onlyOnes(int i1,int i2)
+{
+	int k,i,j;
+	for(j=0;j<globalN;j++)
+	{
+		if(P.A[i1][j]==0 || P.A[i2][j]==0) continue; 
+		for(i=0;i<globalM;i++)
+		{
+			if(i==i1 || i==i2) continue;
+			if(P.A[i][j]==1) break;
+		}
+		if(i==globalM) 
+		{
+			return false;
+		}
+	}
+	return true;
+}
+	
+void print2fileHH()
+{
+	string path=pwd+"adaptedH.txt";
+	ofstream f(path.c_str());
+	int i,j;
+	for(i=0;i<globalM;i++)
+	{
+		for(j=0;j<globalN;j++)
+		{
+			f<<P.A[i][j]<<" ";
+		}
+		f<<endl;
+	}
+	f.close();
+}
+
+
+void printHH()
+	{
+		int i,j;
+		for(i=0;i<globalM;i++)
+		{
+			for(j=0;j<globalN;j++)
+			{
+				cout<<P.A[i][j]<<" ";
+			}
+			cout<<endl;
+		}
+		cout<< "**"<<endl;
+	}
+
+int CostIJ(int i1,int i2)
+{
+	int j,res=0;
+	for(j=0;j<globalN;j++)
+	{
+		if(P.A[i1][j]==1 && P.A[i2][j]==1) res++;
+		if(P.A[i1][j]==0 && P.A[i2][j]==1) res--;
+	}
+	return res;
+}
+
+bool matrixOK()
+{
+	int j,i;
+	int count;
+	for(i=0;i<globalM;i++)
+	{
+		count=0;
+		for(j=0;j<globalN;j++)
+		{
+			count+=P.A[i][j];
+		}
+		if (count<6) return false;
+	}
+	for(j=0;j<globalN;j++)
+	{
+		count=0;
+		for(i=0;i<globalM;i++)
+		{
+			count+=P.A[i][j];
+		}
+		if (count<2) return false;
+	}
+
+	return true;
+}
+void adaptHMatrix()
+{
+	int k,i2,i1,profit,x=0;
+	/*
+	for(k=0;k<globalM-10;k++)
+	{
+		i1=globalM-k-1;
+		i2=k;
+		if(i1==i2) continue;
+		addRowsH(i1,i2);
+		if(matrixOK()) break;
+	}*/
+	for(k=0;k<1000000;k++)
+	{
+		i1=rand()%globalM;
+		i2=rand()%globalM;
+		if(i1==i2) continue;
+		if(!onlyOnes(i1,i2)) continue;
+		profit=CostIJ(i1,i2);
+		if(profit<x) continue;
+		addRowsH(i1,i2);
+	}
+	//printHH();
+}
+
+
+
+
+	bool TooMuch(int serial)
+	{
+		double sum,avg=0;
+		int j,x1,x2;
+		x1=globalPT[serial]->child1;
+		x2=globalPT[serial]->child2;
+		return false;
+		if(globalOcc[x1]>1 || globalOcc[x2]>1) return false;
+		return true;
+		/*
+		for(j=0;j<globalLeavesChildren;j++)
+		{
+			avg+=globalOcc[j];
+		}
+		
+		avg/=globalLeavesChildren;
+		if(avg==0) return false;
+		if(globalOcc[x1]==0 && globalOcc[x2]==0) return false;
+		sum=(globalOcc[x1]+globalOcc[x2])/2;
+		if(sum>avg) return true;
+		return false;
+		*/
+	}			
+
+	bool originalCodeWord()
+	{
+		int i,j,check;
+		for(i=0;i<globalM;i++)
+		{
+			check=0;
+			for(j=0;j<globalN;j++)
+			{
+				check+=P.A[i][j]*((int)original[j]);
+			}
+			if (check%2!=0) 
+			{
+				j=j;
+				return false;
+			}
+
+		}
+		return true;
+	}
+	bool codeWord()
+	{
+		int i,j,check;
+		for(i=0;i<globalM;i++)
+		{
+			check=0;
+			for(j=0;j<globalN;j++)
+			{
+				check+=P.A[i][j]*((int)solution[j+SHIFT]);
+			}
+			if (check%2!=0) return false;
+		}
+		return true;
+	}
+	int sortRowByOccurence(int i,int Keys[bigN])
+	{
+		int j,k,l,x1,x2,ones=0,fill=0;
+		CP * curr;
+		int B[N];
+		bool C[N];
+		if(i==0)
+		{
+			return	sortRowBySignificance(i,Keys);
+		}
+		for(j=0;j<globalN;j++)
+		{
+			C[j]=false;
+			if(P.A[i][j]==1)
+			{
+				B[ones]=j;
+				ones++;
+			}
+		}
+		for(k=0;k<globalX;k++)
+		{
+			curr=globalPT[k];
+			x1=belongs(curr->child1,B,ones);
+			x2=belongs(curr->child2,B,ones);
+			
+			if(x1!=-1 && x2!=-1 && !C[x1] && !C[x2])
+			{
+				if(globalOcc[curr->child1]<2 || globalOcc[curr->child2]<2) continue;
+				if(TooMuch(curr->serial)) continue;
+				Keys[fill]=B[x1];
+				Keys[ones-fill-1]=B[x2];
+				fill++;
+				C[x1]=true;
+				C[x2]=true;
+			}	
+		}
+		for(k=0;k<globalX;k++)
+		{
+			curr=globalPT[k];
+			x1=belongs(curr->child1,B,ones);
+			x2=belongs(curr->child2,B,ones);
+			if(x1!=-1 && x2!=-1 && !C[x1] && !C[x2])
+			{
+				if(globalOcc[curr->child1]<2 || globalOcc[curr->child2]<2)
+				{
+					Keys[fill]=B[x1];
+					Keys[fill+1]=B[x2];
+					fill+=2;
+					C[x1]=true;
+					C[x2]=true;
+				}
+			}
+		}
+
+		for(k=0;k<ones;k++)
+		{
+			if(C[k]) continue;
+			Keys[fill]=B[k];
+			C[k]=false;
+			fill++;
+		}
+		return ones;
+	}
+
+
+	void genDynamicCP(int order)
+	{
+		bool terminate=true;
+		bool spare;
+		int i,v,j,range,k,dim,h,s1,s2,dimCopy,base,row=0;
+		double COST[N];
+		double significance;
+		double sig1,sig2;
+		int Keys[bigN];
+		for(j=0;j<bigN;j++)
+			Keys[j]=0;
+		if(order==0)
+		{
+			for(i=0;i<globalM-globalR;i++)
+			{ 
+				k=0;
+				if(!globalFirst && i>globalLastRows-1 && globalUseReduction)
+				{
+					sortRowByFeedback(i,Keys);
+				}
+				else
+				{
+					dim=sortRowByOccurence(i,Keys);
+				}
+				dimCopy=dim;
+				for(j=0;j<dimCopy;j++)
+				{
+					if(j==dimCopy)
+					{
+						v=Keys[dimCopy];
+						sig1=abs(originalX[v]-0.5);
+						sig2=sig1;
+						significance=CalcSig(sig1,sig2);
+						globalCP[i][k].set(-1,v,order,significance,true);// if leaf should add SHIFT to children
+																	// if not then keep children serial as is
+						k++;
+						Degrees[i][order]++;
+						continue;
+					}
+					dimCopy--;
+					sig1=abs(originalX[Keys[j]]-0.5);
+					sig2=abs(originalX[Keys[dimCopy]]-0.5);
+					significance=CalcSig(sig1,sig2);
+					globalCP[i][k].set(Keys[j],Keys[dimCopy],order,significance,true);
+					Degrees[i][order]++;
+					k++;
+				}
+			}
+		}
+		else
+		{
+			for(i=0;i<globalM-globalR;i++)
+			{
+				base=0;
+				if(Degrees[i][order]==-1) continue;
+				for(j=0;j<order;j++)
+					base+=Degrees[i][j];
+				k=0;
+				sortBySignificance(order,i,Keys);
+				dimCopy=Degrees[i][order-1];
+				spare=dimCopy%2;
+				for(j=0;j<dimCopy;j++)
+				{
+					if(j==3)
+					{
+						globalX=globalX;
+					}
+					if(j==dimCopy-1)
+					{
+						globalCP[i][base]=(*globalPT[globalCP[i][j].serial]);
+						Degrees[i][order]++;
+						k++;
+						continue;
+					}
+					dimCopy--;
+					for(h=0;h<Degrees[i][order-1];h++)
+					{
+						if(globalCP[i][base-Degrees[i][order-1]+h].serial==Keys[j])
+						{
+							sig1=globalCP[i][base-Degrees[i][order-1]+h].significance;
+							break;
+						}
+					}
+					for(h=0;h<Degrees[i][order-1];h++)
+					{
+						if(globalCP[i][base-Degrees[i][order-1]+h].serial==Keys[dimCopy])
+						{
+							sig2=globalCP[i][base-Degrees[i][order-1]+h].significance;
+							break;
+						}
+					}
+					if(spare) k++;
+					significance=CalcSig(sig1,sig2);
+					globalCP[i][base+k].set(Keys[j],Keys[dimCopy],order,significance,false);
+					Degrees[i][order]++;
+					if(!spare) k++;
+				}
+			}
+		}
+		if(order>-1)
+		{
+			k=k;
+			for(i=0;i<globalM-globalR;i++)
+			{
+				base=0;
+				for(j=0;j<order+1;j++)
+					base+=Degrees[i][j];
+				range=Degrees[i][order];
+				if(range==-1) continue;
+				switch(range)
+				{
+					case 5: //has to remove 58 to the back of the que and then cancel the last changes here.
+					{
+						s1=globalCP[i][base-range].serial;
+						sig1=globalCP[i][base-range].significance;
+						s2=globalCP[i][base-range+1].serial;
+						sig2=globalCP[i][base-range+1].significance;
+						significance=CalcSig(sig1,sig2);
+						globalCP[i][base].set(s1,s2,order,significance,false);
+						base++;
+						s1=globalCP[i][base-range+1].serial;
+						sig1=globalCP[i][base-range+1].significance;
+						s2=globalCP[i][base-range+2].serial;
+						sig2=globalCP[i][base-range+2].significance;
+						significance=CalcSig(sig1,sig2);
+						globalCP[i][base].set(s1,s2,order,significance,false);
+						Degrees[i][order]+=2;
+						for(j=order+1;j<N;j++)
+							Degrees[i][order+1]=-1;
+						globalTerminatePT[i]=true;
+						break;
+					}
+					case 4:
+					{
+						s1=globalCP[i][base-range].serial;
+						sig1=globalCP[i][base-range].significance;
+						s2=globalCP[i][base-range+1].serial;
+						sig2=globalCP[i][base-range+1].significance;
+						significance=CalcSig(sig1,sig2);
+						globalCP[i][base].set(s1,s2,order,significance,false);
+						Degrees[i][order]++;// needs 2 finish+ make all LT1=true.. make CP over last 3
+						for(j=order+1;j<N;j++)
+							Degrees[i][order+1]=-1;
+						globalTerminatePT[i]=true;
+						break;
+					}
+					case 3:
+					{
+						globalTerminatePT[i]=true;
+						for(j=order+1;j<N;j++)
+							Degrees[i][order+1]=-1;
+					}
+				}//switch
+			}//for
+		}//if
+		else
+		{
+			terminate=false;
+		}
+		for(i=0;i<globalM-globalR;i++)
+		{
+			if(!globalTerminatePT[i])
+			{
+				terminate=false;
+				break;
+			}
+			terminate=true;
+		}
+		if(terminate)
+		{
+			return;
+		}
+		genDynamicCP(order+1);
+	}
+	void printSol()
+	{
+		int j,i;
+		return;
+		cout<<P.A[0][0]<<" "<<P.A[0][1]<<" "<<P.A[0][2]<<endl;
+		return;
+		for(j=0;j<globalN;j++)
+		{
+			cout<<j<<": "<<original[j]<<"  "<<originalX[j]<<"  "<<solution[j]<<endl;
+		}
+	}
+};
+
+
+typedef struct
+{
+	int n,k,m;
+	int **H,**G;
+	int *H_dim,Total_dim;
+} Code;
+
+
+typedef struct
+{
+	// iterations number statistics
+	double max_iter_num;
+	double min_iter_num;
+	double avg_iter_num;
+	// RPC number statistics
+	double max_RPC_num;
+ 	double min_RPC_num;
+	double avg_RPC_num;
+	// Gomory cuts
+	double max_cuts_num;
+	double min_cuts_num;
+	double avg_cuts_num;
+	// Total Constraints Num
+	double total_constr_num;
+	// Permutations number
+	double avg_perm_num;
+} CodeStat;
+
+
+//int ReadCode(char *,Code *);
+//int DuplicateCode(Code *source,Code *dest);
+//void FreeCode(Code *);
+
+int ReadCode(char *filename,Code *C);
+int DuplicateCode(Code *source,Code *dest);
+void FreeCode(Code *C);
+bool generateSignals(ofstream &Xfile,ofstream &Sfile,double globalSNR,int len,int n,int k);
+//how come Z6?? now it completly does not work .. not even with best SNR.. why increasing XPT caused it?
+
+//there is another call to generate signal Buff that has to be eliminated!!
+//after 1 iteration there is a different shift... needs to find it and shift accordingly (or add 
+//the other variables.. not recommended..
+
+//needs to accumulate the non integrals from iteration to iteration..
+
+//needs to add the constraints now.. already made sainity check
+//now needs to perform the constraints addition only to the rows that are not satisfied, not for all.
+#endif

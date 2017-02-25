@@ -1,0 +1,2 @@
+modePT=0  mode=7  code=7  FACTOR=1
+2.5: 0.0634921  	comp:9.72571    1bit correction: 0

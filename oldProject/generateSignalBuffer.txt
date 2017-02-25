@@ -1,0 +1,76 @@
+bool generateSignalBuffer(double X[N],double snr)
+{
+	snr=globalSNR;
+	double ans;
+	if(globalFreeze) return true;
+	if(code==7||code==8||code==9) return generatePolarSignalBuffer(X);
+	string str1=pwd+"WGN.txt",str2=pwd+"Y1.txt",str3=pwd+"Xorg.txt";
+	int v,n=globalN;
+	int k=globalK;
+	ifstream Gfile(gMatrixFile.c_str());
+	ofstream WGN(str1.c_str());
+	ofstream outFile,backup;
+	outFile.open (str2.c_str());
+	if(useBackup)
+	{
+		reloadBackup();
+		return true;
+	}
+	backup.open (str3.c_str());
+	int ind=0,i=0,j=0,l=0;
+	bool flag =false;
+	//int G[N][M];
+	double num=0;
+	int W[N];
+	int Y[N];
+	double Z[N];
+	double R=(1.0*globalK)/(1.0*globalN);
+	double snrUp=snr+10*log10(2.0*R);
+	double factor=2*pow(10.0,(snrUp/20.0));
+	while (1)
+	{
+		for(int v=0;v<globalK;v++)
+			W[v]=rand()%2;
+		for(int v=0;v<k;v++)
+			if(W[v]==1)
+			{
+				flag=true;
+				break;
+			}
+		if(flag) break;
+	}
+	//refer to G
+//	for(int p=0;p<10000;p++)
+//		WGN<<rand_normal(0,1)<<" ";
+	readFile(Gfile,G,n,k);
+	multV(G,W,Y,n,k);
+	for(v=0;v<n;v++)
+	{
+		Z[v]=rand_normal(0,1)/factor;
+		X[v]= Z[v]+FACTOR*Y[v];
+		original[v]=FACTOR*Y[v];
+		originalX[v]=1.0*X[v];
+	}
+	ans=0;
+	
+	for(v=0;v<n;v++)
+	{
+		ans+=(Z[v]*Z[v]);
+	}
+	ans/=n;
+	//multH(globalP,Y,W,n,n-k);
+	for(int v=0;v<n;v++)
+	{
+		outFile<<30+Y[v];
+		outFile<<" ";
+		backup<<Z[v];
+		backup<<" "; backup<<Y[v];backup<<" ";
+		globalSpecialBackup[v]=originalX[v];
+	}
+	outFile.close();
+	backup.close();
+	return true;	
+}
+//SNR = SNR_vec[SNR_ind] + 10*log10(2*R); // Normalzi SNR by code-rate to get Eb/No
+
+

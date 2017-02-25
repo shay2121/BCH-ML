@@ -1,0 +1,24 @@
+MaxDepth=4  modePT=0  mode=7  code=4  RemCon=1  MA=0  FACTOR=1
+PrimeIter=6
+WeakerDepth=15
+AvgIterations=1
+globalRoundCheck=1
+AvgIterations=3
+globalRoundCheck=0
+2:   0.4  	iterations: 92       comp:71.6627    1bit correction: 0.4  ML4: 0    SGD4 0    EVEN: 0.4
+2.5: 0  	iterations: 0       comp:0    1bit correction: 0  ML4: 0    SGD4 0    EVEN: 0
+3:   0  	iterations: 0       comp:0    1bit correction: 0  ML4: 0    SGD4 0    EVEN: 0
+3.5: 0  	iterations: 0       comp:0    1bit correction: 0  ML4: 0    SGD4 0    EVEN: 0
+4:   0  	iterations: 0       comp:0    1bit correction: 0  ML4: 0    SGD4 0    EVEN: 0
+4.5: 0  	iterations: 0       comp:0    1bit correction: 0  ML4: 0    SGD4 0    EVEN: 0
+5:   0  	iterations: 0       comp:0    1bit correction: 0  ML4: 0    SGD4 0    EVEN: 0
+5.5: 0  	iterations: 0       comp:0    1bit correction: 0  ML4: 0    SGD4 0    EVEN: 0
+6:   0  	iterations: 0       comp:0    1bit correction: 0  ML4: 0    SGD4 0    EVEN: 0
+6.5: 71.6627  	iterations: 0       comp:3.17986e-307    1bit correction: 7.85138e-313  ML4: -1.#QNAN    SGD4 0    EVEN: 0
+7:   0  	iterations: 0       comp:7.16888e-315    1bit correction: 1.99468e-312  ML4: -1.#QNAN    SGD4 0    EVEN: 0
+7.5: 0  	iterations: 0       comp:5.54012e+088    1bit correction: 6.36599e-314  ML4: -1.#QNAN    SGD4 0    EVEN: 0
+8:   0  	iterations: 0       comp:6.82676e-315    1bit correction: 0  ML4: -1.#QNAN    SGD4 0    EVEN: 0
+8.5: 0  	iterations: 0       comp:5.54016e+088    1bit correction: 0  ML4: -1.#QNAN    SGD4 7.74682e-304    EVEN: 0
+9:   0  	iterations: 0       comp:6.82676e-315    1bit correction: 0  ML4: -1.#QNAN    SGD4 9.76118e-312    EVEN: 0
+9.5: 0  	iterations: 0       comp:5.54021e+088    1bit correction: 0  ML4: -1.#QNAN    SGD4 0    EVEN: 0
+10:   0  	iterations: 0       comp:4.18006e+108    1bit correction: 0  ML4: -1.#QNAN    SGD4 4.94066e-324    EVEN: 0

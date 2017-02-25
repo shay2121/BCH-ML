@@ -1,0 +1,14 @@
+MaxDepth=4  modePT=0  mode=0  code=0  RemCon=0  MA=0  FACTOR=1
+PrimeIter=6
+WeakerDepth=8
+AvgIterations=1
+globalRoundCheck=1
+AvgIterations=3
+globalRoundCheck=0
+3:   0  	iterations: 7       comp:15.7556    1bit correction: 0  ML4: 0    SGD4 0    EVEN: 0
+3.5: -9.25596e+061  	iterations: 0       comp:-9.25596e+061    1bit correction: 0  ML4: 0    SGD4 0    EVEN: 0
+4:   -9.25596e+061  	iterations: 0       comp:-9.25596e+061    1bit correction: 0  ML4: 0    SGD4 0    EVEN: 0
+4.5: -9.25596e+061  	iterations: 0       comp:-9.25596e+061    1bit correction: 0  ML4: 0    SGD4 0    EVEN: 0
+5:   -9.25596e+061  	iterations: 0       comp:-9.25596e+061    1bit correction: 0  ML4: 0    SGD4 0    EVEN: 0
+5.5: -9.25596e+061  	iterations: 0       comp:-9.25596e+061    1bit correction: 0  ML4: 0    SGD4 0    EVEN: 0
+6:   -9.25596e+061  	iterations: 0       comp:-9.25596e+061    1bit correction: 0  ML4: 0    SGD4 0    EVEN: 0

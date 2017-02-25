@@ -1,0 +1,9 @@
+modePT=0  mode=7  code=17  FACTOR=1
+PrimeIter=25
+WeakerDepth=8
+AvgIterations=1
+globalRoundCheck=1
+2:   0.0618375  	comp:2.28274    1bit correction: 0.0159011  ML4: 0.00353357    SGD4 0    EVEN: 0.0159011
+3:   -9.25596e+061  	comp:-9.25596e+061    1bit correction: 0  ML4: 0    SGD4 0    EVEN: 0
+4:   -9.25596e+061  	comp:-9.25596e+061    1bit correction: 0  ML4: 0    SGD4 0    EVEN: 0
+5:   -9.25596e+061  	comp:-9.25596e+061    1bit correction: 0  ML4: 0    SGD4 0    EVEN: 0
