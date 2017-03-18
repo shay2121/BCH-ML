@@ -7,7 +7,7 @@ import codes
 import csv
 import glob, os
 import shutil
-import NSA
+#import NSA
 
 
 
@@ -15,10 +15,11 @@ import NSA
 import tensorflow as tf
 import numpy as np
 
+mode =2
 globalK=85
 globalN= 127
 globalM=globalN-globalK
-globalSnr=40
+globalSnr=float(40)
 globalInd=3
 numOfWords=10000
 logFolder="/tmp/bch_model"
@@ -27,7 +28,11 @@ BCH_TEST= "BCH" + str(globalK) + "x" + str(globalN) + "test.csv"
 
 
 def genData(fname1,fname2):
-  codes.generateData(globalK, globalN, globalSnr, numOfWords,globalInd,fname1,fname2)
+    c1=codes.Code(globalN,globalK)
+    c1.generateData4Training(globalInd,globalSnr,numOfWords,globalInd,fname1,fname2)
+
+#emp1 = Employee("Zara", 2000)
+ # codes.generateData(globalK, globalN, globalSnr, numOfWords,globalInd,fname1,fname2)
  # fname='Data/bch' + str(globalK) + 'x' + str(globalN) + '.csv'
   #t = np.genfromtxt(fname, delimiter=',')
   #return t
@@ -40,8 +45,8 @@ def main():
             os.unlink(os.path.join(root, f))
         for d in dirs:
             shutil.rmtree(os.path.join(root, d))
-    NSA.decode()
-    return 1
+   # NSA.decode()
+    #return 1
     # Load datasets.
     genData(BCH_TRAINING, BCH_TEST)
 

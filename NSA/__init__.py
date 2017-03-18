@@ -9,24 +9,19 @@ class Solver:
 
 def NSA():
     #return -1 or 0= > fail, 1 = > success, 2 = > anomali, 3 = > no feasible solution(constraints collide)
-    x, i, solveAns;
-    int
-    tries = 0;
-    if (CODE_DIM < 21) IPD.ML();
+    mode=0
+    def __init__(self, mode):
+        self.mode=mode
+
+
     if (mode == 2) resetCounters();
     globalNSAfirst=true;
     while (1)
-        {
-        if (mode == 1 | | mode == 3 | | (mode == 2 | | (
-        code == 7 | | code == 8 | | code == 9 | | code == 19 | | code == 20 | | code == 18 | | code == 6)))
-        {
-            IPD.remConstraints(globalNSAfirst);
+        IPD.remConstraints(globalNSAfirst);
         globalRemCon = 1;
-        }
         // if (mode == 3 | | (
             mode == 2 & & (code != 7 & & code != 7 & & code != 9 & & code != 19 & & code != 20 & & code != 18)))
-        if ((mode == 2 & & (
-                                    code != 7 & & code != 7 & & code != 9 & & code != 19 & & code != 20 & & code != 18 & & code != 6)))
+        if (mode == 2 )
         {
         IPD.matrixAdaptation();
         globalMA=1;
