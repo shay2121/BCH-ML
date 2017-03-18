@@ -7,7 +7,7 @@ import codes
 import csv
 import glob, os
 import shutil
-#import NSA
+import NSA
 
 
 
@@ -49,6 +49,8 @@ def main():
     #return 1
     # Load datasets.
     genData(BCH_TRAINING, BCH_TEST)
+    solver=NSA.Solver()
+    solver.decode()
 
     training_set = tf.contrib.learn.datasets.base.load_csv(filename=BCH_TRAINING, target_column=globalN,
                                                            target_dtype=np.int)
