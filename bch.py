@@ -8,21 +8,11 @@ import csv
 import glob, os
 import shutil
 import NSA
-
-
-
-
 import tensorflow as tf
 import numpy as np
+import settings
 
-mode =2
-globalK=85
-globalN= 127
-globalM=globalN-globalK
-globalSnr=float(40)
-globalInd=3
-numOfWords=10000
-logFolder="/tmp/bch_model"
+settings.init()
 BCH_TRAINING= "BCH" + str(globalK) + "x" + str(globalN) + "Training.csv"
 BCH_TEST= "BCH" + str(globalK) + "x" + str(globalN) + "test.csv"
 

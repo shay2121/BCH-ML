@@ -1,8 +1,10 @@
 from pulp import *
-
+import settings
 
 class Solver:
     def __init__(self):
+        print(4)
+        print(globalK)
         self.n=5
     def remConstraints(self):
         return
