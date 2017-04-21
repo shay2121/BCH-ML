@@ -13,6 +13,7 @@ import numpy as np
 import settings
 
 settings.init()
+
 BCH_TRAINING= "BCH" + str(globalK) + "x" + str(globalN) + "Training.csv"
 BCH_TEST= "BCH" + str(globalK) + "x" + str(globalN) + "test.csv"
 
