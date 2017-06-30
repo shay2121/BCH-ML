@@ -17,8 +17,8 @@ class Code:
       wb = load_workbook('CFG/codes.xlsx')
       sheet = wb.get_sheet_by_name('bch' + str(self.k) + 'x' + str(self.n))
       for i in range(2, 2 + self.k - 1):
-        for j in range(1, 1 + self.n - 1):
-          r[i - 1, j] = sheet.cell(row=i, column=j).value.__int__()
+        for j in range(1, 1 + self.n ):
+          r[i - 2, j-1] = sheet.cell(row=i, column=j).value.__int__()
       return r
 
     def flip(self,p):
@@ -48,8 +48,12 @@ class Code:
       global dataWriter2
       dataWriter1 = csv.writer(dataFile1, delimiter=',', quotechar='"', quoting=csv.QUOTE_NONE)
       dataWriter2 = csv.writer(dataFile2, delimiter=',', quotechar='"', quoting=csv.QUOTE_NONE, )
-      dataWriter1.writerow([numOfWords - 1, self.n + 0, self.k, ind])
-      dataWriter2.writerow([numOfWords - 1, self.n + 0, self.k, ind])
+      r1 = np.append(self.k, np.append(ind, np.zeros(self.n- 3)))
+      r1 = np.append(self.n, r1)
+      r1 = np.append(numOfWords, r1)
+      r1=r1.astype(int)
+      dataWriter1.writerow(r1)
+      dataWriter2.writerow(r1)
       for i in range(1, numOfWords):
         r = self.generateCodeWord(snr,globalInd)
         dataWriter1.writerow(r)

@@ -1,6 +1,19 @@
 from pulp import *
 import settings
 
+'''
+globalMode=settings.globalMode
+globalK=settings.globalK
+globalN=settings.globalN
+globalM=settings.globalM
+globalSnr=settings.globalSnr
+globalInd=settings.globalInd
+globalnumOfWords=settings.globalnumOfWords
+globallogFolder=settings.globallogFolder
+'''
+
+
+
 class Solver:
     def __init__(self):
         print(4)

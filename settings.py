@@ -1,6 +1,6 @@
 def init():
     global globalMode
-    globalMode = 2
+    globalMode=2
     global globalK
     globalK = 85
     global globalN
@@ -8,10 +8,10 @@ def init():
     global globalM
     globalM = globalN - globalK
     global globalSnr
-    globalSnr = float(40)
+    globalSnr = float(2)
     global globalInd
-    globalInd = 3
-    global numOfWords
-    numOfWords = 100
-    global logFolder
-    logFolder = "/tmp/bch_model"
+    globalInd = 2
+    global globalNumOfWords
+    globalNumOfWords= 100000
+    global globalLogFolder
+    globalLogFolder="/tmp/bch_model"

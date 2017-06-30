@@ -11,26 +11,37 @@ import NSA
 import tensorflow as tf
 import numpy as np
 import settings
+import pandas as pd
 
 settings.init()
+globalMode=settings.globalMode
+globalK=settings.globalK
+globalN=settings.globalN
+globalM=settings.globalM
+globalSnr=settings.globalSnr
+globalInd=settings.globalInd
+globalNumOfWords=settings.globalNumOfWords
+globalLogFolder=settings.globalLogFolder
+G=codes.Code(globalN,globalK)
 
-BCH_TRAINING= "BCH" + str(globalK) + "x" + str(globalN) + "Training.csv"
-BCH_TEST= "BCH" + str(globalK) + "x" + str(globalN) + "test.csv"
+BCH_TRAINING= "BCH" + str(globalK) + "x" + str(globalN) + "x" + str(globalInd) + "x" + str(globalNumOfWords) + "Training.csv"
+BCH_TEST= "BCH" + str(globalK) + "x" + str(globalN) + "x" + str(globalInd) + "x" + str(globalNumOfWords) + "Test.csv"
+BCH_CAL= "BCH" + str(globalK) + "x" + str(globalN) + "x" + str(globalInd) + "x" + str(globalNumOfWords) + "Cal.csv"
 
 
-def genData(fname1,fname2):
-    c1=codes.Code(globalN,globalK)
-    c1.generateData4Training(globalInd,globalSnr,numOfWords,globalInd,fname1,fname2)
 
 #emp1 = Employee("Zara", 2000)
- # codes.generateData(globalK, globalN, globalSnr, numOfWords,globalInd,fname1,fname2)
+ # codes.generateData(globalK, globalN, globalSnr, globalNumOfWords,globalInd,fname1,fname2)
  # fname='Data/bch' + str(globalK) + 'x' + str(globalN) + '.csv'
   #t = np.genfromtxt(fname, delimiter=',')
   #return t
 
+def genData(fname1, fname2):
+    G.generateData4Training(globalInd, globalSnr, globalNumOfWords, globalInd, fname1, fname2)
+
 
 def main():
-    folder='/'+logFolder
+    folder='/'+ globalLogFolder
     for root, dirs, files in os.walk(folder):
         for f in files:
             os.unlink(os.path.join(root, f))
@@ -40,8 +51,8 @@ def main():
     #return 1
     # Load datasets.
     genData(BCH_TRAINING, BCH_TEST)
-    solver=NSA.Solver()
-    solver.decode()
+    #solver=NSA.Solver()
+    #solver.decode()
 
     training_set = tf.contrib.learn.datasets.base.load_csv(filename=BCH_TRAINING, target_column=globalN,
                                                            target_dtype=np.int)
@@ -52,14 +63,14 @@ def main():
 
     # Build 3 layer DNN with 10, 20, 10 units respectively.
     classifier = tf.contrib.learn.DNNClassifier(feature_columns=feature_columns,
-                                                hidden_units=[4000, 80],
+                                                hidden_units=[100,30,2],
                                                 n_classes=2,
-                                                model_dir=logFolder)
+                                                model_dir=globalLogFolder)
 
     # Fit model.
     classifier.fit(x=training_set.data,
                    y=training_set.target,
-                   steps=10)
+                   steps=1000)
 
     # Evaluate accuracy.
     accuracy_score = classifier.evaluate(x=test_set.data,
@@ -74,9 +85,16 @@ def main():
     # print('Predictions: {}'.format(str(y)))
 
 
-    print("start train...")
+    z = classifier.predict(test_set.data)
+    z = np.delete(z, [globalNumOfWords-1], None)
+    csv_input = pd.read_csv(BCH_TEST)
+    A = np.vstack([np.transpose(csv_input.as_matrix()),z])
+    A=np.transpose(A[[globalInd,globalN,globalN+1]])
+    print("aa")
+    np.savetxt(BCH_CAL, A, delimiter=",")
 
-
+    
+main()
 
 if __name__ == "__main__": main()
 
